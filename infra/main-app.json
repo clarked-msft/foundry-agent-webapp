@@ -4,8 +4,8 @@
   "metadata": {
     "_generator": {
       "name": "bicep",
-      "version": "0.37.4.10188",
-      "templateHash": "8914921746174677172"
+      "version": "0.46.1.21595",
+      "templateHash": "18153572550619884362"
     }
   },
   "parameters": {
@@ -36,8 +36,35 @@
     "entraTenantId": {
       "type": "string"
     },
+    "entraBackendClientId": {
+      "type": "string",
+      "defaultValue": ""
+    },
     "webImageName": {
       "type": "string"
+    },
+    "userAssignedIdentityId": {
+      "type": "string",
+      "defaultValue": ""
+    },
+    "oboManagedIdentityClientId": {
+      "type": "string",
+      "defaultValue": ""
+    },
+    "appInsightsConnectionString": {
+      "type": "string",
+      "defaultValue": ""
+    },
+    "appInsightsFrontendConnectionString": {
+      "type": "string",
+      "defaultValue": ""
+    },
+    "workloadProfileName": {
+      "type": "string",
+      "defaultValue": "",
+      "metadata": {
+        "description": "Workload profile name to run the container app on (set when the environment is VNet-injected). Leave empty for classic Consumption-only environments."
+      }
     }
   },
   "variables": {
@@ -46,14 +73,58 @@
       "containerRegistryRegistries": "cr",
       "appManagedEnvironments": "cae-",
       "appContainerApps": "ca-",
-      "operationalInsightsWorkspaces": "law-"
+      "operationalInsightsWorkspaces": "law-",
+      "insightsComponents": "appi-",
+      "managedIdentityUserAssignedIdentities": "id-"
     },
-    "abbrs": "[variables('$fxv#0')]"
+    "abbrs": "[variables('$fxv#0')]",
+    "baseEnv": [
+      {
+        "name": "ASPNETCORE_ENVIRONMENT",
+        "value": "Production"
+      },
+      {
+        "name": "ASPNETCORE_URLS",
+        "value": "http://+:8080"
+      },
+      {
+        "name": "ENTRA_SPA_CLIENT_ID",
+        "value": "[parameters('entraSpaClientId')]"
+      },
+      {
+        "name": "ENTRA_TENANT_ID",
+        "value": "[parameters('entraTenantId')]"
+      },
+      {
+        "name": "AI_AGENT_ENDPOINT",
+        "value": "[parameters('aiAgentEndpoint')]"
+      },
+      {
+        "name": "AI_AGENT_ID",
+        "value": "[parameters('aiAgentId')]"
+      },
+      {
+        "name": "APPLICATIONINSIGHTS_CONNECTION_STRING",
+        "value": "[parameters('appInsightsConnectionString')]"
+      },
+      {
+        "name": "APPLICATIONINSIGHTS_FRONTEND_CONNECTION_STRING",
+        "value": "[parameters('appInsightsFrontendConnectionString')]"
+      }
+    ],
+    "miEnv": [
+      {
+        "name": "MANAGED_IDENTITY_CLIENT_ID",
+        "value": "[parameters('oboManagedIdentityClientId')]"
+      }
+    ],
+    "oboEnv": "[if(not(empty(parameters('entraBackendClientId'))), createArray(createObject('name', 'ENTRA_BACKEND_CLIENT_ID', 'value', parameters('entraBackendClientId'))), createArray())]",
+    "containerEnv": "[concat(variables('baseEnv'), variables('miEnv'), variables('oboEnv'))]"
   },
   "resources": [
     {
       "type": "Microsoft.Resources/deployments",
-      "apiVersion": "2022-09-01",
+      "apiVersion": "2025-04-01",
       "name": "web-container-app",
       "properties": {
         "expressionEvaluationOptions": {
@@ -83,38 +154,22 @@
             "value": 8080
           },
           "env": {
-            "value": [
-              {
-                "name": "ASPNETCORE_ENVIRONMENT",
-                "value": "Production"
-              },
-              {
-                "name": "ASPNETCORE_URLS",
-                "value": "http://+:8080"
-              },
-              {
-                "name": "ENTRA_SPA_CLIENT_ID",
-                "value": "[parameters('entraSpaClientId')]"
-              },
-              {
-                "name": "ENTRA_TENANT_ID",
-                "value": "[parameters('entraTenantId')]"
-              },
-              {
-                "name": "AI_AGENT_ENDPOINT",
-                "value": "[parameters('aiAgentEndpoint')]"
-              },
-              {
-                "name": "AI_AGENT_ID",
-                "value": "[parameters('aiAgentId')]"
-              }
-            ]
+            "value": "[variables('containerEnv')]"
           },
           "enableIngress": {
             "value": true
           },
           "external": {
             "value": true
+          },
+          "healthProbePath": {
+            "value": "/api/health"
+          },
+          "userAssignedIdentityId": {
+            "value": "[parameters('userAssignedIdentityId')]"
+          },
+          "workloadProfileName": {
+            "value": "[parameters('workloadProfileName')]"
           }
         },
         "template": {
@@ -123,8 +178,8 @@
           "metadata": {
             "_generator": {
               "name": "bicep",
-              "version": "0.37.4.10188",
-              "templateHash": "18110497468743210561"
+              "version": "0.46.1.21595",
+              "templateHash": "4548264592866048164"
             }
           },
           "parameters": {
@@ -160,34 +215,61 @@
             "external": {
               "type": "bool",
               "defaultValue": true
+            },
+            "healthProbePath": {
+              "type": "string",
+              "defaultValue": ""
+            },
+            "cpu": {
+              "type": "string",
+              "defaultValue": "0.5"
+            },
+            "memory": {
+              "type": "string",
+              "defaultValue": "1Gi"
+            },
+            "minReplicas": {
+              "type": "int",
+              "defaultValue": 0
+            },
+            "maxReplicas": {
+              "type": "int",
+              "defaultValue": 3
+            },
+            "userAssignedIdentityId": {
+              "type": "string"
+            },
+            "workloadProfileName": {
+              "type": "string",
+              "defaultValue": "",
+              "metadata": {
+                "description": "Workload profile to run on (required when the environment has workload profiles enabled, e.g. VNet-injected environments). Leave empty for classic Consumption-only environments."
+              }
             }
           },
           "resources": [
             {
               "type": "Microsoft.App/containerApps",
-              "apiVersion": "2023-05-01",
+              "apiVersion": "2024-03-01",
               "name": "[parameters('name')]",
               "location": "[parameters('location')]",
               "tags": "[parameters('tags')]",
               "identity": {
-                "type": "SystemAssigned"
+                "type": "UserAssigned",
+                "userAssignedIdentities": {
+                  "[format('{0}', parameters('userAssignedIdentityId'))]": {}
+                }
               },
               "properties": {
                 "managedEnvironmentId": "[parameters('containerAppsEnvironmentId')]",
+                "workloadProfileName": "[if(not(empty(parameters('workloadProfileName'))), parameters('workloadProfileName'), null())]",
                 "configuration": {
                   "activeRevisionsMode": "Single",
                   "ingress": "[if(parameters('enableIngress'), createObject('external', parameters('external'), 'targetPort', parameters('targetPort'), 'transport', 'auto', 'allowInsecure', false()), null())]",
                   "registries": [
                     {
-                      "server": "[reference(resourceId('Microsoft.ContainerRegistry/registries', parameters('containerRegistryName')), '2023-01-01-preview').loginServer]",
-                      "username": "[listCredentials(resourceId('Microsoft.ContainerRegistry/registries', parameters('containerRegistryName')), '2023-01-01-preview').username]",
-                      "passwordSecretRef": "registry-password"
-                    }
-                  ],
-                  "secrets": [
-                    {
-                      "name": "registry-password",
-                      "value": "[listCredentials(resourceId('Microsoft.ContainerRegistry/registries', parameters('containerRegistryName')), '2023-01-01-preview').passwords[0].value]"
+                      "server": "[reference(resourceId('Microsoft.ContainerRegistry/registries', parameters('containerRegistryName')), '2023-07-01').loginServer]",
+                      "identity": "[if(not(empty(parameters('userAssignedIdentityId'))), parameters('userAssignedIdentityId'), 'system')]"
                     }
                   ]
                 },
@@ -198,14 +280,15 @@
                       "image": "[parameters('containerImage')]",
                       "env": "[parameters('env')]",
                       "resources": {
-                        "cpu": "[json('0.5')]",
-                        "memory": "1Gi"
-                      }
+                        "cpu": "[json(parameters('cpu'))]",
+                        "memory": "[parameters('memory')]"
+                      },
+                      "probes": "[if(not(empty(parameters('healthProbePath'))), createArray(createObject('type', 'Liveness', 'httpGet', createObject('path', parameters('healthProbePath'), 'port', parameters('targetPort')), 'periodSeconds', 30, 'failureThreshold', 3), createObject('type', 'Startup', 'httpGet', createObject('path', parameters('healthProbePath'), 'port', parameters('targetPort')), 'periodSeconds', 10, 'failureThreshold', 30, 'initialDelaySeconds', 5)), createArray())]"
                     }
                   ],
                   "scale": {
-                    "minReplicas": 0,
-                    "maxReplicas": 3
+                    "minReplicas": "[parameters('minReplicas')]",
+                    "maxReplicas": "[parameters('maxReplicas')]"
                   }
                 }
               }
@@ -222,11 +305,7 @@
             },
             "fqdn": {
               "type": "string",
-              "value": "[if(parameters('enableIngress'), reference(resourceId('Microsoft.App/containerApps', parameters('name')), '2023-05-01').configuration.ingress.fqdn, '')]"
-            },
-            "identityPrincipalId": {
-              "type": "string",
-              "value": "[reference(resourceId('Microsoft.App/containerApps', parameters('name')), '2023-05-01', 'full').identity.principalId]"
+              "value": "[if(parameters('enableIngress'), reference(resourceId('Microsoft.App/containerApps', parameters('name')), '2024-03-01').configuration.ingress.fqdn, '')]"
             }
           }
         }
@@ -236,15 +315,11 @@
   "outputs": {
     "webEndpoint": {
       "type": "string",
-      "value": "[format('https://{0}', reference(resourceId('Microsoft.Resources/deployments', 'web-container-app'), '2022-09-01').outputs.fqdn.value)]"
-    },
-    "webIdentityPrincipalId": {
-      "type": "string",
-      "value": "[reference(resourceId('Microsoft.Resources/deployments', 'web-container-app'), '2022-09-01').outputs.identityPrincipalId.value]"
+      "value": "[format('https://{0}', reference(resourceId('Microsoft.Resources/deployments', 'web-container-app'), '2025-04-01').outputs.fqdn.value)]"
     },
     "webAppName": {
       "type": "string",
-      "value": "[reference(resourceId('Microsoft.Resources/deployments', 'web-container-app'), '2022-09-01').outputs.name.value]"
+      "value": "[reference(resourceId('Microsoft.Resources/deployments', 'web-container-app'), '2025-04-01').outputs.name.value]"
     }
   }
 }

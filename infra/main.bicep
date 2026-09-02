@@ -28,6 +28,9 @@ param enableObo bool = false
 @description('Container image for web service (set by postprovision hook)')
 param webImageName string = 'mcr.microsoft.com/k8se/quickstart:latest'  // Placeholder during initial provision
 
+@description('Resource ID of an existing subnet to VNet-inject the Container Apps environment into (e.g. to reach a privately-networked AI Foundry). Leave empty for a public environment.')
+param vnetInfrastructureSubnetId string = ''
+
 @description('Default tags applied by Azure Policy (optional)')
 param defaultTags object = {}
 
@@ -54,6 +57,7 @@ module infrastructure 'main-infrastructure.bicep' = {
     location: location
     tags: tags
     resourceToken: resourceToken
+    infrastructureSubnetId: vnetInfrastructureSubnetId
   }
 }
 
@@ -89,6 +93,7 @@ module app 'main-app.bicep' = {
     oboManagedIdentityClientId: infrastructure.outputs.managedIdentityClientId
     appInsightsConnectionString: infrastructure.outputs.appInsightsConnectionString
     appInsightsFrontendConnectionString: infrastructure.outputs.appInsightsFrontendConnectionString
+    workloadProfileName: !empty(vnetInfrastructureSubnetId) ? 'Consumption' : ''
   }
 }
 
