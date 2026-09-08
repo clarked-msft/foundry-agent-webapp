@@ -14,6 +14,9 @@ param oboManagedIdentityClientId string = ''
 param appInsightsConnectionString string = ''
 param appInsightsFrontendConnectionString string = ''
 
+@description('Workload profile name to run the container app on (set when the environment is VNet-injected). Leave empty for classic Consumption-only environments.')
+param workloadProfileName string = ''
+
 var abbrs = loadJsonContent('./abbreviations.json')
 
 // Base env vars always present
@@ -86,6 +89,7 @@ module webApp './core/host/container-app.bicep' = {
     external: true
     healthProbePath: '/api/health'
     userAssignedIdentityId: userAssignedIdentityId
+    workloadProfileName: workloadProfileName
   }
 }
 

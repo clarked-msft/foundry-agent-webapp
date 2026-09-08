@@ -366,6 +366,10 @@ public class AgentFrameworkService : IDisposable
         var fileSearchQuotes = new Dictionary<string, string>();
         // Track the current response ID for MCP approval resume flow
         string? currentResponseId = null;
+        // Dedupe annotations that can arrive both via StreamingResponseTextAnnotationAddedUpdate
+        // (fired as annotations are attached, e.g. Azure AI Search / knowledge base citations)
+        // and via the completed MessageResponseItem's OutputTextAnnotations.
+        var seenAnnotationKeys = new HashSet<string>();
 
         await foreach (StreamingResponseUpdate update
             in responsesClient.CreateResponseStreamingAsync(
@@ -427,11 +431,24 @@ public class AgentFrameworkService : IDisposable
                 }
                 
                 // Extract annotations/citations from completed output items
-                var annotations = ExtractAnnotations(itemDoneUpdate.Item, fileSearchQuotes);
+                var annotations = ExtractAnnotations(itemDoneUpdate.Item, fileSearchQuotes, seenAnnotationKeys);
                 if (annotations.Count > 0)
                 {
                     _logger.LogInformation("Extracted {Count} annotations from response", annotations.Count);
                     yield return StreamChunk.WithAnnotations(annotations);
+                }
+            }
+            else if (update is StreamingResponseTextAnnotationAddedUpdate annotationAddedUpdate)
+            {
+                // Some tools (e.g. Azure AI Search / Foundry knowledge base grounding) surface
+                // citations exclusively through this per-annotation streaming event rather than
+                // on the completed MessageResponseItem's OutputTextAnnotations. Without handling
+                // this, those citations were silently dropped ("Unhandled stream update type").
+                var annotationInfo = ConvertAnnotation(annotationAddedUpdate.Annotation, fileSearchQuotes);
+                if (annotationInfo != null && seenAnnotationKeys.Add(GetAnnotationKey(annotationInfo)))
+                {
+                    _logger.LogInformation("Extracted annotation from streaming update: {Type}", annotationInfo.Type);
+                    yield return StreamChunk.WithAnnotations(new List<AnnotationInfo> { annotationInfo });
                 }
             }
             else if (update is StreamingResponseOutputItemAddedUpdate itemAddedUpdate)
@@ -731,9 +748,14 @@ public class AgentFrameworkService : IDisposable
     /// <summary>
     /// Extracts annotation information from a completed response item.
     /// </summary>
+    /// <param name="seenAnnotationKeys">
+    /// Optional dedup set (see <see cref="GetAnnotationKey"/>) shared with the streaming
+    /// StreamingResponseTextAnnotationAddedUpdate handler so the same citation isn't emitted twice.
+    /// </param>
     private List<AnnotationInfo> ExtractAnnotations(
         ResponseItem? item, 
-        Dictionary<string, string>? fileSearchQuotes = null)
+        Dictionary<string, string>? fileSearchQuotes = null,
+        HashSet<string>? seenAnnotationKeys = null)
     {
         var annotations = new List<AnnotationInfo>();
         
@@ -746,59 +768,80 @@ public class AgentFrameworkService : IDisposable
             
             foreach (var annotation in content.OutputTextAnnotations)
             {
-                var annotationInfo = annotation switch
-                {
-                    UriCitationMessageAnnotation uriAnnotation => new AnnotationInfo
-                    {
-                        Type = "uri_citation",
-                        Label = uriAnnotation.Title ?? "Source",
-                        Url = uriAnnotation.Uri?.ToString(),
-                        StartIndex = uriAnnotation.StartIndex,
-                        EndIndex = uriAnnotation.EndIndex
-                    },
-                    
-                    FileCitationMessageAnnotation fileCitation => new AnnotationInfo
-                    {
-                        Type = "file_citation",
-                        Label = fileCitation.Filename ?? fileCitation.FileId ?? "File",
-                        FileId = fileCitation.FileId,
-                        StartIndex = fileCitation.Index,
-                        EndIndex = fileCitation.Index,
-                        Quote = fileSearchQuotes?.TryGetValue(fileCitation.FileId ?? string.Empty, out var quote) == true 
-                            ? quote : null
-                    },
-                    
-                    FilePathMessageAnnotation filePath => new AnnotationInfo
-                    {
-                        Type = "file_path",
-                        Label = filePath.FileId?.Split('/').LastOrDefault() ?? "Generated File",
-                        FileId = filePath.FileId,
-                        StartIndex = filePath.Index,
-                        EndIndex = filePath.Index
-                    },
-                    
-                    ContainerFileCitationMessageAnnotation containerCitation => new AnnotationInfo
-                    {
-                        Type = "container_file_citation",
-                        Label = containerCitation.Filename ?? "Container File",
-                        FileId = containerCitation.FileId,
-                        ContainerId = containerCitation.ContainerId,
-                        StartIndex = containerCitation.StartIndex,
-                        EndIndex = containerCitation.EndIndex,
-                        Quote = fileSearchQuotes?.TryGetValue(containerCitation.FileId ?? string.Empty, out var containerQuote) == true 
-                            ? containerQuote : null
-                    },
-                    
-                    _ => null
-                };
-                
-                if (annotationInfo != null)
-                    annotations.Add(annotationInfo);
+                var annotationInfo = ConvertAnnotation(annotation, fileSearchQuotes);
+                if (annotationInfo == null) continue;
+
+                if (seenAnnotationKeys != null && !seenAnnotationKeys.Add(GetAnnotationKey(annotationInfo)))
+                    continue; // already emitted via the streaming annotation-added event
+
+                annotations.Add(annotationInfo);
             }
         }
 
         return annotations;
     }
+
+    /// <summary>
+    /// Converts a single SDK message annotation (from either the streaming
+    /// StreamingResponseTextAnnotationAddedUpdate event or a completed MessageResponseItem's
+    /// OutputTextAnnotations) into our wire-format <see cref="AnnotationInfo"/>.
+    /// </summary>
+    private static AnnotationInfo? ConvertAnnotation(object? annotation, Dictionary<string, string>? fileSearchQuotes)
+    {
+        return annotation switch
+        {
+            UriCitationMessageAnnotation uriAnnotation => new AnnotationInfo
+            {
+                Type = "uri_citation",
+                Label = uriAnnotation.Title ?? "Source",
+                Url = uriAnnotation.Uri?.ToString(),
+                StartIndex = uriAnnotation.StartIndex,
+                EndIndex = uriAnnotation.EndIndex
+            },
+
+            FileCitationMessageAnnotation fileCitation => new AnnotationInfo
+            {
+                Type = "file_citation",
+                Label = fileCitation.Filename ?? fileCitation.FileId ?? "File",
+                FileId = fileCitation.FileId,
+                StartIndex = fileCitation.Index,
+                EndIndex = fileCitation.Index,
+                Quote = fileSearchQuotes?.TryGetValue(fileCitation.FileId ?? string.Empty, out var quote) == true
+                    ? quote : null
+            },
+
+            FilePathMessageAnnotation filePath => new AnnotationInfo
+            {
+                Type = "file_path",
+                Label = filePath.FileId?.Split('/').LastOrDefault() ?? "Generated File",
+                FileId = filePath.FileId,
+                StartIndex = filePath.Index,
+                EndIndex = filePath.Index
+            },
+
+            ContainerFileCitationMessageAnnotation containerCitation => new AnnotationInfo
+            {
+                Type = "container_file_citation",
+                Label = containerCitation.Filename ?? "Container File",
+                FileId = containerCitation.FileId,
+                ContainerId = containerCitation.ContainerId,
+                StartIndex = containerCitation.StartIndex,
+                EndIndex = containerCitation.EndIndex,
+                Quote = fileSearchQuotes?.TryGetValue(containerCitation.FileId ?? string.Empty, out var containerQuote) == true
+                    ? containerQuote : null
+            },
+
+            _ => null
+        };
+    }
+
+    /// <summary>
+    /// Builds a dedup key for an annotation so the same citation streamed via
+    /// StreamingResponseTextAnnotationAddedUpdate and later re-listed on the completed
+    /// MessageResponseItem's OutputTextAnnotations is only surfaced to the client once.
+    /// </summary>
+    private static string GetAnnotationKey(AnnotationInfo annotation) =>
+        $"{annotation.Type}:{annotation.Label}:{annotation.Url}:{annotation.FileId}:{annotation.StartIndex}:{annotation.EndIndex}";
 
     /// <summary>
     /// Create a new conversation for the agent.
@@ -856,15 +899,16 @@ public class AgentFrameworkService : IDisposable
         {
             _logger.LogInformation("Listing conversations (limit={Limit})", limit);
 
-            // Pin to the same resolved version metadata/streaming use.
-            var resolvedAgent = await GetAgentAsync(cancellationToken);
-            var resolvedVersion = _configuredAgentVersion ?? resolvedAgent.Version;
-
+            // Intentionally omit the version here (unlike streaming/metadata calls). When a version
+            // is supplied, the server filters by the exact "agentName:version" id, so conversations
+            // created against an older agent version become invisible the moment the agent is
+            // republished in Foundry (its "latest" version changes) even though they still exist.
+            // Passing name-only scopes the list to the agent across all of its versions.
             var conversations = new List<ConversationSummary>();
             // Fetch limit+1 to detect if more conversations exist beyond the requested page
             var fetchLimit = limit + 1;
             await foreach (var conv in GetProjectClient().ProjectOpenAIClient.GetProjectConversationsClient().GetProjectConversationsAsync(
-                new AgentReference(_agentId, resolvedVersion), cancellationToken: cancellationToken))
+                new AgentReference(_agentId), cancellationToken: cancellationToken))
             {
                 conversations.Add(new ConversationSummary
                 {
@@ -913,10 +957,25 @@ public class AgentFrameworkService : IDisposable
                         .Where(c => c.Text != null)
                         .Select(c => c.Text));
 
+                    // Extract citations too, so reopening a past conversation still shows them
+                    // (previously only live-streamed messages carried annotations).
+                    var annotations = new List<AnnotationInfo>();
+                    foreach (var messageContent in messageItem.Content)
+                    {
+                        if (messageContent.OutputTextAnnotations == null) continue;
+                        foreach (var annotation in messageContent.OutputTextAnnotations)
+                        {
+                            var annotationInfo = ConvertAnnotation(annotation, fileSearchQuotes: null);
+                            if (annotationInfo != null)
+                                annotations.Add(annotationInfo);
+                        }
+                    }
+
                     messages.Add(new ConversationMessageInfo
                     {
                         Role = messageItem.Role.ToString().ToLowerInvariant(),
-                        Content = content
+                        Content = content,
+                        Annotations = annotations.Count > 0 ? annotations : null
                     });
                 }
             }

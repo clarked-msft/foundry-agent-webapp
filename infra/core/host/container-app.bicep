@@ -15,6 +15,9 @@ param minReplicas int = 0
 param maxReplicas int = 3
 param userAssignedIdentityId string
 
+@description('Workload profile to run on (required when the environment has workload profiles enabled, e.g. VNet-injected environments). Leave empty for classic Consumption-only environments.')
+param workloadProfileName string = ''
+
 resource containerRegistry 'Microsoft.ContainerRegistry/registries@2023-07-01' existing = {
   name: containerRegistryName
 }
@@ -31,6 +34,7 @@ resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
   }
   properties: {
     managedEnvironmentId: containerAppsEnvironmentId
+    workloadProfileName: !empty(workloadProfileName) ? workloadProfileName : null
     configuration: {
       activeRevisionsMode: 'Single'
       ingress: enableIngress ? {

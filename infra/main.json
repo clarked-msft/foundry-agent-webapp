@@ -4,8 +4,8 @@
   "metadata": {
     "_generator": {
       "name": "bicep",
-      "version": "0.39.26.7824",
-      "templateHash": "16326965498161154554"
+      "version": "0.46.1.21595",
+      "templateHash": "5525404339029075031"
     }
   },
   "parameters": {
@@ -66,6 +66,13 @@
         "description": "Container image for web service (set by postprovision hook)"
       }
     },
+    "vnetInfrastructureSubnetId": {
+      "type": "string",
+      "defaultValue": "",
+      "metadata": {
+        "description": "Resource ID of an existing subnet to VNet-inject the Container Apps environment into (e.g. to reach a privately-networked AI Foundry). Leave empty for a public environment."
+      }
+    },
     "defaultTags": {
       "type": "object",
       "defaultValue": {},
@@ -81,6 +88,7 @@
       "appManagedEnvironments": "cae-",
       "appContainerApps": "ca-",
       "operationalInsightsWorkspaces": "law-",
+      "insightsComponents": "appi-",
       "managedIdentityUserAssignedIdentities": "id-"
     },
     "abbrs": "[variables('$fxv#0')]",
@@ -118,6 +126,9 @@
           },
           "resourceToken": {
             "value": "[variables('resourceToken')]"
+          },
+          "infrastructureSubnetId": {
+            "value": "[parameters('vnetInfrastructureSubnetId')]"
           }
         },
         "template": {
@@ -126,8 +137,8 @@
           "metadata": {
             "_generator": {
               "name": "bicep",
-              "version": "0.39.26.7824",
-              "templateHash": "13310519744154185376"
+              "version": "0.46.1.21595",
+              "templateHash": "3796211179523123617"
             }
           },
           "parameters": {
@@ -139,6 +150,13 @@
             },
             "resourceToken": {
               "type": "string"
+            },
+            "infrastructureSubnetId": {
+              "type": "string",
+              "defaultValue": "",
+              "metadata": {
+                "description": "Resource ID of an existing subnet to inject the Container Apps environment into (VNet injection). Leave empty for a non-VNet environment."
+              }
             }
           },
           "variables": {
@@ -148,6 +166,7 @@
               "appManagedEnvironments": "cae-",
               "appContainerApps": "ca-",
               "operationalInsightsWorkspaces": "law-",
+              "insightsComponents": "appi-",
               "managedIdentityUserAssignedIdentities": "id-"
             },
             "abbrs": "[variables('$fxv#0')]",
@@ -193,8 +212,8 @@
                   "metadata": {
                     "_generator": {
                       "name": "bicep",
-                      "version": "0.39.26.7824",
-                      "templateHash": "12880245531681333249"
+                      "version": "0.46.1.21595",
+                      "templateHash": "15272242227093573482"
                     }
                   },
                   "parameters": {
@@ -250,6 +269,204 @@
             {
               "type": "Microsoft.Resources/deployments",
               "apiVersion": "2025-04-01",
+              "name": "appInsights",
+              "properties": {
+                "expressionEvaluationOptions": {
+                  "scope": "inner"
+                },
+                "mode": "Incremental",
+                "parameters": {
+                  "name": {
+                    "value": "[format('{0}{1}', variables('abbrs').insightsComponents, parameters('resourceToken'))]"
+                  },
+                  "location": {
+                    "value": "[parameters('location')]"
+                  },
+                  "tags": {
+                    "value": "[variables('allTags')]"
+                  },
+                  "logAnalyticsWorkspaceId": {
+                    "value": "[reference(resourceId('Microsoft.Resources/deployments', 'log-analytics'), '2025-04-01').outputs.id.value]"
+                  }
+                },
+                "template": {
+                  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+                  "contentVersion": "1.0.0.0",
+                  "metadata": {
+                    "_generator": {
+                      "name": "bicep",
+                      "version": "0.46.1.21595",
+                      "templateHash": "4134719351257290686"
+                    }
+                  },
+                  "parameters": {
+                    "name": {
+                      "type": "string",
+                      "metadata": {
+                        "description": "Application Insights resource name"
+                      }
+                    },
+                    "location": {
+                      "type": "string",
+                      "defaultValue": "[resourceGroup().location]",
+                      "metadata": {
+                        "description": "Azure region"
+                      }
+                    },
+                    "tags": {
+                      "type": "object",
+                      "defaultValue": {},
+                      "metadata": {
+                        "description": "Resource tags"
+                      }
+                    },
+                    "logAnalyticsWorkspaceId": {
+                      "type": "string",
+                      "metadata": {
+                        "description": "Log Analytics workspace resource ID for data ingestion"
+                      }
+                    }
+                  },
+                  "resources": [
+                    {
+                      "type": "Microsoft.Insights/components",
+                      "apiVersion": "2020-02-02",
+                      "name": "[parameters('name')]",
+                      "location": "[parameters('location')]",
+                      "tags": "[parameters('tags')]",
+                      "kind": "web",
+                      "properties": {
+                        "Application_Type": "web",
+                        "WorkspaceResourceId": "[parameters('logAnalyticsWorkspaceId')]"
+                      }
+                    }
+                  ],
+                  "outputs": {
+                    "connectionString": {
+                      "type": "string",
+                      "value": "[reference(resourceId('Microsoft.Insights/components', parameters('name')), '2020-02-02').ConnectionString]"
+                    },
+                    "instrumentationKey": {
+                      "type": "string",
+                      "value": "[reference(resourceId('Microsoft.Insights/components', parameters('name')), '2020-02-02').InstrumentationKey]"
+                    },
+                    "id": {
+                      "type": "string",
+                      "value": "[resourceId('Microsoft.Insights/components', parameters('name'))]"
+                    },
+                    "name": {
+                      "type": "string",
+                      "value": "[parameters('name')]"
+                    }
+                  }
+                }
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Resources/deployments', 'log-analytics')]"
+              ]
+            },
+            {
+              "type": "Microsoft.Resources/deployments",
+              "apiVersion": "2025-04-01",
+              "name": "appInsightsFrontend",
+              "properties": {
+                "expressionEvaluationOptions": {
+                  "scope": "inner"
+                },
+                "mode": "Incremental",
+                "parameters": {
+                  "name": {
+                    "value": "[format('{0}fe-{1}', variables('abbrs').insightsComponents, parameters('resourceToken'))]"
+                  },
+                  "location": {
+                    "value": "[parameters('location')]"
+                  },
+                  "tags": {
+                    "value": "[variables('allTags')]"
+                  },
+                  "logAnalyticsWorkspaceId": {
+                    "value": "[reference(resourceId('Microsoft.Resources/deployments', 'log-analytics'), '2025-04-01').outputs.id.value]"
+                  }
+                },
+                "template": {
+                  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+                  "contentVersion": "1.0.0.0",
+                  "metadata": {
+                    "_generator": {
+                      "name": "bicep",
+                      "version": "0.46.1.21595",
+                      "templateHash": "4134719351257290686"
+                    }
+                  },
+                  "parameters": {
+                    "name": {
+                      "type": "string",
+                      "metadata": {
+                        "description": "Application Insights resource name"
+                      }
+                    },
+                    "location": {
+                      "type": "string",
+                      "defaultValue": "[resourceGroup().location]",
+                      "metadata": {
+                        "description": "Azure region"
+                      }
+                    },
+                    "tags": {
+                      "type": "object",
+                      "defaultValue": {},
+                      "metadata": {
+                        "description": "Resource tags"
+                      }
+                    },
+                    "logAnalyticsWorkspaceId": {
+                      "type": "string",
+                      "metadata": {
+                        "description": "Log Analytics workspace resource ID for data ingestion"
+                      }
+                    }
+                  },
+                  "resources": [
+                    {
+                      "type": "Microsoft.Insights/components",
+                      "apiVersion": "2020-02-02",
+                      "name": "[parameters('name')]",
+                      "location": "[parameters('location')]",
+                      "tags": "[parameters('tags')]",
+                      "kind": "web",
+                      "properties": {
+                        "Application_Type": "web",
+                        "WorkspaceResourceId": "[parameters('logAnalyticsWorkspaceId')]"
+                      }
+                    }
+                  ],
+                  "outputs": {
+                    "connectionString": {
+                      "type": "string",
+                      "value": "[reference(resourceId('Microsoft.Insights/components', parameters('name')), '2020-02-02').ConnectionString]"
+                    },
+                    "instrumentationKey": {
+                      "type": "string",
+                      "value": "[reference(resourceId('Microsoft.Insights/components', parameters('name')), '2020-02-02').InstrumentationKey]"
+                    },
+                    "id": {
+                      "type": "string",
+                      "value": "[resourceId('Microsoft.Insights/components', parameters('name'))]"
+                    },
+                    "name": {
+                      "type": "string",
+                      "value": "[parameters('name')]"
+                    }
+                  }
+                }
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Resources/deployments', 'log-analytics')]"
+              ]
+            },
+            {
+              "type": "Microsoft.Resources/deployments",
+              "apiVersion": "2025-04-01",
               "name": "container-registry",
               "properties": {
                 "expressionEvaluationOptions": {
@@ -276,8 +493,8 @@
                   "metadata": {
                     "_generator": {
                       "name": "bicep",
-                      "version": "0.39.26.7824",
-                      "templateHash": "15188983125644838891"
+                      "version": "0.46.1.21595",
+                      "templateHash": "3003640575178547347"
                     }
                   },
                   "parameters": {
@@ -317,7 +534,7 @@
                       "condition": "[not(empty(parameters('acrPullPrincipalId')))]",
                       "type": "Microsoft.Authorization/roleAssignments",
                       "apiVersion": "2022-04-01",
-                      "scope": "[format('Microsoft.ContainerRegistry/registries/{0}', parameters('name'))]",
+                      "scope": "[resourceId('Microsoft.ContainerRegistry/registries', parameters('name'))]",
                       "name": "[guid(resourceId('Microsoft.ContainerRegistry/registries', parameters('name')), parameters('acrPullPrincipalId'), variables('acrPullRoleId'))]",
                       "properties": {
                         "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', variables('acrPullRoleId'))]",
@@ -370,6 +587,9 @@
                   },
                   "logAnalyticsWorkspaceId": {
                     "value": "[reference(resourceId('Microsoft.Resources/deployments', 'log-analytics'), '2025-04-01').outputs.id.value]"
+                  },
+                  "infrastructureSubnetId": {
+                    "value": "[parameters('infrastructureSubnetId')]"
                   }
                 },
                 "template": {
@@ -378,8 +598,8 @@
                   "metadata": {
                     "_generator": {
                       "name": "bicep",
-                      "version": "0.39.26.7824",
-                      "templateHash": "1633343163737460403"
+                      "version": "0.46.1.21595",
+                      "templateHash": "10185508435057644305"
                     }
                   },
                   "parameters": {
@@ -394,7 +614,17 @@
                     },
                     "logAnalyticsWorkspaceId": {
                       "type": "string"
+                    },
+                    "infrastructureSubnetId": {
+                      "type": "string",
+                      "defaultValue": "",
+                      "metadata": {
+                        "description": "Resource ID of an existing subnet to inject the environment into (must be delegated to Microsoft.App/environments, /27 or larger). Leave empty for a non-VNet environment."
+                      }
                     }
+                  },
+                  "variables": {
+                    "vnetProps": "[if(not(empty(parameters('infrastructureSubnetId'))), createObject('vnetConfiguration', createObject('infrastructureSubnetId', parameters('infrastructureSubnetId'), 'internal', false()), 'workloadProfiles', createArray(createObject('name', 'Consumption', 'workloadProfileType', 'Consumption'))), createObject())]"
                   },
                   "resources": [
                     {
@@ -403,15 +633,7 @@
                       "name": "[parameters('name')]",
                       "location": "[parameters('location')]",
                       "tags": "[parameters('tags')]",
-                      "properties": {
-                        "appLogsConfiguration": {
-                          "destination": "log-analytics",
-                          "logAnalyticsConfiguration": {
-                            "customerId": "[reference(parameters('logAnalyticsWorkspaceId'), '2023-09-01').customerId]",
-                            "sharedKey": "[listKeys(parameters('logAnalyticsWorkspaceId'), '2023-09-01').primarySharedKey]"
-                          }
-                        }
-                      }
+                      "properties": "[union(createObject('appLogsConfiguration', createObject('destination', 'log-analytics', 'logAnalyticsConfiguration', createObject('customerId', reference(parameters('logAnalyticsWorkspaceId'), '2023-09-01').customerId, 'sharedKey', listKeys(parameters('logAnalyticsWorkspaceId'), '2023-09-01').primarySharedKey))), variables('vnetProps'))]"
                     }
                   ],
                   "outputs": {
@@ -432,6 +654,14 @@
             }
           ],
           "outputs": {
+            "appInsightsConnectionString": {
+              "type": "string",
+              "value": "[reference(resourceId('Microsoft.Resources/deployments', 'appInsights'), '2025-04-01').outputs.connectionString.value]"
+            },
+            "appInsightsFrontendConnectionString": {
+              "type": "string",
+              "value": "[reference(resourceId('Microsoft.Resources/deployments', 'appInsightsFrontend'), '2025-04-01').outputs.connectionString.value]"
+            },
             "containerRegistryName": {
               "type": "string",
               "value": "[reference(resourceId('Microsoft.Resources/deployments', 'container-registry'), '2025-04-01').outputs.name.value]"
@@ -491,8 +721,8 @@
           "metadata": {
             "_generator": {
               "name": "bicep",
-              "version": "0.39.26.7824",
-              "templateHash": "847674198108448513"
+              "version": "0.46.1.21595",
+              "templateHash": "181113123305102352"
             }
           },
           "parameters": {
@@ -723,7 +953,14 @@
           },
           "oboManagedIdentityClientId": {
             "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('{0}{1}', variables('abbrs').resourcesResourceGroups, parameters('environmentName'))), 'Microsoft.Resources/deployments', 'infrastructure'), '2025-04-01').outputs.managedIdentityClientId.value]"
-          }
+          },
+          "appInsightsConnectionString": {
+            "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('{0}{1}', variables('abbrs').resourcesResourceGroups, parameters('environmentName'))), 'Microsoft.Resources/deployments', 'infrastructure'), '2025-04-01').outputs.appInsightsConnectionString.value]"
+          },
+          "appInsightsFrontendConnectionString": {
+            "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('{0}{1}', variables('abbrs').resourcesResourceGroups, parameters('environmentName'))), 'Microsoft.Resources/deployments', 'infrastructure'), '2025-04-01').outputs.appInsightsFrontendConnectionString.value]"
+          },
+          "workloadProfileName": "[if(not(empty(parameters('vnetInfrastructureSubnetId'))), createObject('value', 'Consumption'), createObject('value', ''))]"
         },
         "template": {
           "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
@@ -731,8 +968,8 @@
           "metadata": {
             "_generator": {
               "name": "bicep",
-              "version": "0.39.26.7824",
-              "templateHash": "12869978673042423295"
+              "version": "0.46.1.21595",
+              "templateHash": "18153572550619884362"
             }
           },
           "parameters": {
@@ -777,6 +1014,21 @@
             "oboManagedIdentityClientId": {
               "type": "string",
               "defaultValue": ""
+            },
+            "appInsightsConnectionString": {
+              "type": "string",
+              "defaultValue": ""
+            },
+            "appInsightsFrontendConnectionString": {
+              "type": "string",
+              "defaultValue": ""
+            },
+            "workloadProfileName": {
+              "type": "string",
+              "defaultValue": "",
+              "metadata": {
+                "description": "Workload profile name to run the container app on (set when the environment is VNet-injected). Leave empty for classic Consumption-only environments."
+              }
             }
           },
           "variables": {
@@ -786,6 +1038,7 @@
               "appManagedEnvironments": "cae-",
               "appContainerApps": "ca-",
               "operationalInsightsWorkspaces": "law-",
+              "insightsComponents": "appi-",
               "managedIdentityUserAssignedIdentities": "id-"
             },
             "abbrs": "[variables('$fxv#0')]",
@@ -813,6 +1066,14 @@
               {
                 "name": "AI_AGENT_ID",
                 "value": "[parameters('aiAgentId')]"
+              },
+              {
+                "name": "APPLICATIONINSIGHTS_CONNECTION_STRING",
+                "value": "[parameters('appInsightsConnectionString')]"
+              },
+              {
+                "name": "APPLICATIONINSIGHTS_FRONTEND_CONNECTION_STRING",
+                "value": "[parameters('appInsightsFrontendConnectionString')]"
               }
             ],
             "miEnv": [
@@ -870,6 +1131,9 @@
                   },
                   "userAssignedIdentityId": {
                     "value": "[parameters('userAssignedIdentityId')]"
+                  },
+                  "workloadProfileName": {
+                    "value": "[parameters('workloadProfileName')]"
                   }
                 },
                 "template": {
@@ -878,8 +1142,8 @@
                   "metadata": {
                     "_generator": {
                       "name": "bicep",
-                      "version": "0.39.26.7824",
-                      "templateHash": "1593466812549732917"
+                      "version": "0.46.1.21595",
+                      "templateHash": "4548264592866048164"
                     }
                   },
                   "parameters": {
@@ -937,8 +1201,14 @@
                       "defaultValue": 3
                     },
                     "userAssignedIdentityId": {
+                      "type": "string"
+                    },
+                    "workloadProfileName": {
                       "type": "string",
-                      "defaultValue": ""
+                      "defaultValue": "",
+                      "metadata": {
+                        "description": "Workload profile to run on (required when the environment has workload profiles enabled, e.g. VNet-injected environments). Leave empty for classic Consumption-only environments."
+                      }
                     }
                   },
                   "resources": [
@@ -956,6 +1226,7 @@
                       },
                       "properties": {
                         "managedEnvironmentId": "[parameters('containerAppsEnvironmentId')]",
+                        "workloadProfileName": "[if(not(empty(parameters('workloadProfileName'))), parameters('workloadProfileName'), null())]",
                         "configuration": {
                           "activeRevisionsMode": "Single",
                           "ingress": "[if(parameters('enableIngress'), createObject('external', parameters('external'), 'targetPort', parameters('targetPort'), 'transport', 'auto', 'allowInsecure', false()), null())]",
@@ -1068,6 +1339,14 @@
     "ENTRA_BACKEND_APP_OBJECT_ID": {
       "type": "string",
       "value": "[if(parameters('enableObo'), reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('{0}{1}', variables('abbrs').resourcesResourceGroups, parameters('environmentName'))), 'Microsoft.Resources/deployments', 'entra-app'), '2025-04-01').outputs.backendAppObjectId.value, '')]"
+    },
+    "APPLICATIONINSIGHTS_CONNECTION_STRING": {
+      "type": "string",
+      "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('{0}{1}', variables('abbrs').resourcesResourceGroups, parameters('environmentName'))), 'Microsoft.Resources/deployments', 'infrastructure'), '2025-04-01').outputs.appInsightsConnectionString.value]"
+    },
+    "APPLICATIONINSIGHTS_FRONTEND_CONNECTION_STRING": {
+      "type": "string",
+      "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('{0}{1}', variables('abbrs').resourcesResourceGroups, parameters('environmentName'))), 'Microsoft.Resources/deployments', 'infrastructure'), '2025-04-01').outputs.appInsightsFrontendConnectionString.value]"
     }
   }
 }

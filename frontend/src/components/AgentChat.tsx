@@ -182,6 +182,7 @@ export const AgentChat: React.FC<AgentChatProps> = ({ agentName, agentDescriptio
           id: `${conversationId}-${index}`,
           role: msg.role as 'user' | 'assistant',
           content: msg.content,
+          annotations: msg.annotations,
           more: { time: new Date().toISOString() },
         }));
 

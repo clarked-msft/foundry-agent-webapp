@@ -25,6 +25,9 @@
     },
     "enableObo": {
       "value": "${ENABLE_OBO=false}"
+    },
+    "vnetInfrastructureSubnetId": {
+      "value": "${VNET_INFRASTRUCTURE_SUBNET_ID=}"
     }
   }
 }

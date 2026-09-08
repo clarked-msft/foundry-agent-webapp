@@ -2,6 +2,9 @@ param location string
 param tags object
 param resourceToken string
 
+@description('Resource ID of an existing subnet to inject the Container Apps environment into (VNet injection). Leave empty for a non-VNet environment.')
+param infrastructureSubnetId string = ''
+
 var abbrs = loadJsonContent('./abbreviations.json')
 
 var defaultTags = {
@@ -61,6 +64,7 @@ module containerAppsEnvironment './core/host/container-apps-environment.bicep' =
     location: location
     tags: allTags
     logAnalyticsWorkspaceId: logAnalytics.outputs.id
+    infrastructureSubnetId: infrastructureSubnetId
   }
 }
 
