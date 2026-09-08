@@ -17,7 +17,9 @@ function Get-AzdValue($name) {
 
 $clientId = Get-AzdValue 'ENTRA_SPA_CLIENT_ID'
 $tenantId = Get-AzdValue 'ENTRA_TENANT_ID'
+$entraAuthority = Get-AzdValue 'ENTRA_AUTHORITY'
 $backendClientId = Get-AzdValue 'ENTRA_BACKEND_CLIENT_ID'
+$apiScope = Get-AzdValue 'ENTRA_API_SCOPE'
 $appInsightsConnStr = Get-AzdValue 'APPLICATIONINSIGHTS_FRONTEND_CONNECTION_STRING'
 # Escape semicolons for ACR cloud builds — unescaped semicolons are interpreted as shell command separators
 if ($appInsightsConnStr) { $appInsightsConnStrEscaped = $appInsightsConnStr -replace ';', '\;' } else { $appInsightsConnStrEscaped = '' }
@@ -58,7 +60,9 @@ try {
             "--build-arg", "ENTRA_SPA_CLIENT_ID=$clientId",
             "--build-arg", "ENTRA_TENANT_ID=$tenantId"
         )
+        if ($entraAuthority) { $buildArgs += @("--build-arg", "ENTRA_AUTHORITY=$entraAuthority") }
         if ($backendClientId) { $buildArgs += @("--build-arg", "ENTRA_BACKEND_CLIENT_ID=$backendClientId") }
+        if ($apiScope) { $buildArgs += @("--build-arg", "ENTRA_API_SCOPE=$apiScope") }
         if ($appInsightsConnStr) { $buildArgs += @("--build-arg", "APPLICATIONINSIGHTS_FRONTEND_CONNECTION_STRING=$appInsightsConnStr") }
         $buildArgs += @("-f", "deployment/docker/frontend.Dockerfile", "-t", $imageName, ".")
         docker build @buildArgs 2>&1 | Out-Host
@@ -71,7 +75,9 @@ try {
     } else {
         Write-Host "Using ACR cloud build (3-5 min)..." -ForegroundColor Yellow
         $acrBuildArgs = @("--build-arg", "ENTRA_SPA_CLIENT_ID=$clientId", "--build-arg", "ENTRA_TENANT_ID=$tenantId")
+        if ($entraAuthority) { $acrBuildArgs += @("--build-arg", "ENTRA_AUTHORITY=$entraAuthority") }
         if ($backendClientId) { $acrBuildArgs += @("--build-arg", "ENTRA_BACKEND_CLIENT_ID=$backendClientId") }
+        if ($apiScope) { $acrBuildArgs += @("--build-arg", "ENTRA_API_SCOPE=$apiScope") }
         if ($appInsightsConnStrEscaped) { $acrBuildArgs += @("--build-arg", "APPLICATIONINSIGHTS_FRONTEND_CONNECTION_STRING=$appInsightsConnStrEscaped") }
         $buildOutput = az acr build --registry $acrName --image "web:$imageTag" `
             @acrBuildArgs `

@@ -20,6 +20,8 @@ export default defineConfig(({ mode }) => {
   // Map to VITE_ prefixed vars for client access (Vite only exposes VITE_ prefixed vars)
   process.env.VITE_ENTRA_SPA_CLIENT_ID = env.ENTRA_SPA_CLIENT_ID || env.VITE_ENTRA_SPA_CLIENT_ID;
   process.env.VITE_ENTRA_TENANT_ID = env.ENTRA_TENANT_ID || env.VITE_ENTRA_TENANT_ID;
+  process.env.VITE_ENTRA_AUTHORITY = env.ENTRA_AUTHORITY || env.VITE_ENTRA_AUTHORITY || "https://login.microsoftonline.com";
+  process.env.VITE_ENTRA_API_SCOPE = env.ENTRA_API_SCOPE || env.VITE_ENTRA_API_SCOPE || env.ENTRA_SCOPE || env.VITE_ENTRA_SCOPE;
 
   return {
     plugins: [react(), envCheckPlugin()],

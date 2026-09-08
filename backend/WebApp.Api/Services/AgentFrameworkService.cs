@@ -40,6 +40,7 @@ public class AgentFrameworkService : IDisposable
     private readonly string? _backendClientId;
     private readonly string? _tenantId;
     private readonly string? _managedIdentityClientId;
+    private readonly string _aiScope;
     private readonly bool _useObo;
     private readonly TokenCredential _fallbackCredential;
 
@@ -91,6 +92,9 @@ public class AgentFrameworkService : IDisposable
 
         _backendClientId = configuration["ENTRA_BACKEND_CLIENT_ID"];
         _tenantId = configuration["ENTRA_TENANT_ID"] ?? configuration["AzureAd:TenantId"];
+        _aiScope = configuration["AI_SCOPE"]
+            ?? configuration["AI_AUTH_SCOPE"]
+            ?? "https://ai.azure.com/.default";
         // User-assigned MI client ID — used for MI-only mode and as FIC assertion in OBO mode
         _managedIdentityClientId = configuration["MANAGED_IDENTITY_CLIENT_ID"]
             ?? configuration["OBO_MANAGED_IDENTITY_CLIENT_ID"]; // backward compat
@@ -1070,7 +1074,7 @@ public class AgentFrameworkService : IDisposable
             credential = _fallbackCredential;
         }
 
-        var tokenRequestContext = new TokenRequestContext(["https://ai.azure.com/.default"]);
+        var tokenRequestContext = new TokenRequestContext([_aiScope]);
         var accessToken = await credential.GetTokenAsync(tokenRequestContext, cancellationToken);
 
         var requestUrl = $"{_agentEndpoint.TrimEnd('/')}/openai/v1/containers/{Uri.EscapeDataString(containerId)}/files/{Uri.EscapeDataString(fileId)}/content";

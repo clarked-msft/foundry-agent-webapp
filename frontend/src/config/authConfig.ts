@@ -1,7 +1,7 @@
 import type { Configuration } from "@azure/msal-browser";
 import { LogLevel } from "@azure/msal-browser";
 
-// Environment variables (must be set during build or deployment)
+const authorityHost = (import.meta.env.VITE_ENTRA_AUTHORITY || "https://login.microsoftonline.com").replace(/\/+$/, "");
 const clientId = import.meta.env.VITE_ENTRA_SPA_CLIENT_ID;
 
 if (!clientId) {
@@ -23,10 +23,18 @@ if (!tenantId) {
   );
 }
 
+const authority = authorityHost.includes(`/${tenantId}`)
+  ? authorityHost
+  : `${authorityHost}/${tenantId}`;
+
+const configuredScope = import.meta.env.VITE_ENTRA_API_SCOPE || import.meta.env.VITE_ENTRA_SCOPE;
+const defaultScope = `api://${scopeClientId}/Chat.ReadWrite`;
+const apiScope = configuredScope || defaultScope;
+
 export const msalConfig: Configuration = {
   auth: {
     clientId: clientId,
-    authority: `https://login.microsoftonline.com/${tenantId}`,
+    authority: authority,
     redirectUri: window.location.origin, // Will be https://<container-app-url> in production
     postLogoutRedirectUri: window.location.origin,
     navigateToLoginRequestUrl: false, // Avoid redirect loops
@@ -59,12 +67,12 @@ export const msalConfig: Configuration = {
   },
 };
 
-// API permission scope (will match app registration in Step 08)
+// API permission scope (defaults to the app registration scope but can be overridden for sovereign clouds)
 export const loginRequest = {
-  scopes: [`api://${scopeClientId}/Chat.ReadWrite`],
+  scopes: [apiScope],
 };
 
 export const tokenRequest = {
-  scopes: [`api://${scopeClientId}/Chat.ReadWrite`],
+  scopes: [apiScope],
   forceRefresh: false, // Use cached token if valid
 };
