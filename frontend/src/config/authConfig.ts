@@ -27,7 +27,10 @@ const authority = authorityHost.includes(`/${tenantId}`)
   ? authorityHost
   : `${authorityHost}/${tenantId}`;
 
-const configuredScope = import.meta.env.VITE_ENTRA_API_SCOPE || import.meta.env.VITE_ENTRA_SCOPE;
+const configuredScope = [
+  import.meta.env.VITE_ENTRA_API_SCOPE,
+  import.meta.env.VITE_ENTRA_SCOPE,
+].find(scope => scope && scope !== "undefined" && scope !== "null");
 const defaultScope = `api://${scopeClientId}/Chat.ReadWrite`;
 const apiScope = configuredScope || defaultScope;
 

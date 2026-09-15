@@ -27,6 +27,16 @@ export const appReducer = (state: AppState, action: AppAction): AppState => {
         },
       };
 
+    case 'AUTH_SIGNED_OUT':
+      return {
+        ...state,
+        auth: {
+          status: 'unauthenticated',
+          user: null,
+          error: null,
+        },
+      };
+
     case 'AUTH_TOKEN_EXPIRED':
       return {
         ...state,
