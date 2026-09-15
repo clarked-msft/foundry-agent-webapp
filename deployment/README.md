@@ -7,8 +7,11 @@
 ```
 deployment/
 ├── docker/              # Docker build files
-│   └── frontend.Dockerfile  # Single-container build (React + ASP.NET Core)
-├── hooks/               # Azure Developer CLI lifecycle hooks
+│   ├── frontend.Dockerfile  # Single-container build (React + ASP.NET Core)
+│   ├── vendor.Dockerfile    # Air-gapped: pre-fetches deps, run with internet access
+│   └── airgapped.Dockerfile # Air-gapped: builds offline from vendor.Dockerfile's output
+├── app-service/          # Manual App Service configuration guide (alternative to Container Apps)
+├── hooks/                # Azure Developer CLI lifecycle hooks
 │   ├── preprovision.ps1     # Create Entra app + discover AI Foundry + generate config
 │   ├── postprovision.ps1    # Update Entra redirect URIs + assign RBAC
 │   ├── predeploy.ps1        # Build container (local Docker or ACR cloud build)
@@ -67,5 +70,48 @@ azd deploy
 **Build args**: Client ID and Tenant ID are automatically passed to the Dockerfile from azd environment variables.
 
 **Custom npm registries**: Add `.npmrc` to `frontend/` directory - automatically copied during build
+
+## Air-Gapped / Offline Builds
+
+`frontend.Dockerfile` requires internet access at build time (npm registry, NuGet feeds, and
+base image pulls). For environments without internet access, use the two-file split instead:
+
+1. **`vendor.Dockerfile`** — build this once, on a machine WITH internet access. It produces two
+   images:
+   - `frontend-deps` — `npm ci` already run (node_modules pre-installed)
+   - `runtime-base` — the .NET backend already restored + published (backend publish takes no
+     build-time args, so it can be fully finished here) layered on top of the final runtime
+     base image
+
+   ```bash
+   docker build -f deployment/docker/vendor.Dockerfile --target frontend-deps \
+     -t foundry-agent-frontend-deps:latest .
+   docker build -f deployment/docker/vendor.Dockerfile --target runtime-base \
+     -t foundry-agent-runtime-base:latest .
+   docker save foundry-agent-frontend-deps:latest | gzip > foundry-agent-frontend-deps-latest.tar.gz
+   docker save foundry-agent-runtime-base:latest | gzip > foundry-agent-runtime-base-latest.tar.gz
+   ```
+
+   Transfer both images into the air-gapped environment (push to a registry mirror reachable
+   from that network, or `docker save`/`docker load`). Re-run this step whenever
+   `frontend/package-lock.json`, backend source, or the base images change.
+
+2. **`airgapped.Dockerfile`** — run this inside the air-gapped environment. It builds FROM the
+   two vendor images only, makes **zero network calls**, and needs only the frontend build args:
+
+   ```bash
+   docker build -f deployment/docker/airgapped.Dockerfile \
+     --build-arg FRONTEND_DEPS_IMAGE=<registry>/foundry-agent-frontend-deps:latest \
+     --build-arg RUNTIME_BASE_IMAGE=<registry>/foundry-agent-runtime-base:latest \
+     --build-arg ENTRA_SPA_CLIENT_ID=<client-id> \
+     --build-arg ENTRA_TENANT_ID=<tenant-id> \
+     --build-arg ENTRA_AUTHORITY=<authority-host> \
+     --build-arg ENTRA_BACKEND_CLIENT_ID=<backend-client-id> \
+     --build-arg ENTRA_API_SCOPE=<api-scope> \
+     -t web:latest .
+   ```
+
+   This produces the same runtime image as `frontend.Dockerfile` — same runtime env vars
+   (`AI_AGENT_ENDPOINT`, `AI_SCOPE`, `ENTRA_TENANT_ID`, etc.), same `/api/health` endpoint.
 
 For AI-assisted development, see `.github/skills/deploying-to-azure/SKILL.md`.
