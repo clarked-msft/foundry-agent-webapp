@@ -204,7 +204,7 @@ AzureAd__ClientId=$clientId
 AzureAd__Audience=api://$clientId
 AI_AGENT_ENDPOINT=$aiAgentEndpoint
 AI_AGENT_ID=$aiAgentId
-AI_SCOPE=https://ai.azure.com/.default
+AI_AUTH_SCOPE=https://ai.azure.com/.default
 "@
 if ($aiAgentVersion) {
     $backendEnvContent += "`nAI_AGENT_VERSION=$aiAgentVersion"

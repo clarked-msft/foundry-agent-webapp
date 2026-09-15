@@ -16,6 +16,9 @@ param aiAgentEndpoint string = ''
 @description('AI Agent ID (configured via azd env set AI_AGENT_ID)')
 param aiAgentId string = ''
 
+@description('Foundry auth scope used by backend token acquisition (override only for non-public clouds)')
+param aiAuthScope string = 'https://ai.azure.com/.default'
+
 @description('Entra ID Tenant ID (set by azd hook or auto-detected)')
 param entraTenantId string = tenant().tenantId
 
@@ -85,6 +88,7 @@ module app 'main-app.bicep' = {
     containerRegistryName: infrastructure.outputs.containerRegistryName
     aiAgentEndpoint: aiAgentEndpoint
     aiAgentId: aiAgentId
+    aiAuthScope: aiAuthScope
     entraSpaClientId: entraApp.outputs.clientAppId
     entraTenantId: entraTenantId
     entraBackendClientId: enableObo ? entraApp.outputs.backendClientAppId : ''
