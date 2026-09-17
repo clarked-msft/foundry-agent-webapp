@@ -25,6 +25,14 @@ describe('authConfig', () => {
     expect(loginRequest.scopes[0]).toBe('api://backend-client-id/Chat.ReadWrite');
   });
 
+  it('ignores a literal undefined scope from the build environment', async () => {
+    vi.stubEnv('VITE_ENTRA_SPA_CLIENT_ID', 'spa-client-id');
+    vi.stubEnv('VITE_ENTRA_TENANT_ID', 'tenant-id');
+    vi.stubEnv('VITE_ENTRA_API_SCOPE', 'undefined');
+    const { loginRequest } = await import('../../config/authConfig');
+    expect(loginRequest.scopes[0]).toBe('api://spa-client-id/Chat.ReadWrite');
+  });
+
   it('uses custom authority host and custom API scope when configured', async () => {
     vi.stubEnv('VITE_ENTRA_SPA_CLIENT_ID', 'spa-client-id');
     vi.stubEnv('VITE_ENTRA_TENANT_ID', 'tenant-id');

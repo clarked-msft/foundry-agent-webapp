@@ -1,10 +1,59 @@
 using Microsoft.VisualStudio.TestTools.UnitTesting;
+using Microsoft.Extensions.Configuration;
+using WebApp.Api.Services;
 
 namespace WebApp.Api.Tests;
 
 [TestClass]
 public class AgentFrameworkServiceConfigTests
 {
+    [TestMethod]
+    public void AiAuthScope_PrefersAiAuthScopeOverLegacyAiScope()
+    {
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["AI_AUTH_SCOPE"] = "https://custom.ai.scope/.default",
+                ["AI_SCOPE"] = "https://legacy.scope/.default"
+            })
+            .Build();
+
+        var resolvedScope = AgentFrameworkService.ResolveAiAuthScope(configuration);
+
+        Assert.AreEqual("https://custom.ai.scope/.default", resolvedScope);
+    }
+
+    [TestMethod]
+    public void AiAuthScope_FallsBackToLegacyAiScopeWhenCanonicalMissing()
+    {
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["AI_SCOPE"] = "https://legacy.scope/.default"
+            })
+            .Build();
+
+        var resolvedScope = AgentFrameworkService.ResolveAiAuthScope(configuration);
+
+        Assert.AreEqual("https://legacy.scope/.default", resolvedScope);
+    }
+
+    [TestMethod]
+    public void AiAuthScope_UsesDefaultWhenNoScopeConfigured()
+    {
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["AI_AUTH_SCOPE"] = "   ",
+                ["AI_SCOPE"] = ""
+            })
+            .Build();
+
+        var resolvedScope = AgentFrameworkService.ResolveAiAuthScope(configuration);
+
+        Assert.AreEqual(AgentFrameworkService.DefaultAiAuthScope, resolvedScope);
+    }
+
     [TestMethod]
     public void UseObo_TrueWhenBackendClientIdAndTenantIdSet()
     {

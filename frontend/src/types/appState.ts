@@ -64,6 +64,7 @@ export interface AppState {
 export type AppAction = 
   // Auth actions
   | { type: 'AUTH_INITIALIZED'; user: AccountInfo }
+  | { type: 'AUTH_SIGNED_OUT' }
   | { type: 'AUTH_TOKEN_EXPIRED' }
   
   // Chat actions

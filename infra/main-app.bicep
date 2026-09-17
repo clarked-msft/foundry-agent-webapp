@@ -5,6 +5,7 @@ param containerAppsEnvironmentId string
 param containerRegistryName string
 param aiAgentEndpoint string
 param aiAgentId string
+param aiAuthScope string = 'https://ai.azure.com/.default'
 param entraSpaClientId string
 param entraTenantId string
 param entraBackendClientId string = ''
@@ -44,6 +45,10 @@ var baseEnv = [
   {
     name: 'AI_AGENT_ID'
     value: aiAgentId
+  }
+  {
+    name: 'AI_AUTH_SCOPE'
+    value: aiAuthScope
   }
   {
     name: 'APPLICATIONINSIGHTS_CONNECTION_STRING'

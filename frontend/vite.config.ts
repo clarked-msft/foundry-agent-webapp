@@ -7,6 +7,14 @@ import { envCheckPlugin } from "./plugins/envcheck";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
+function setClientEnvironmentVariable(name: string, value: string | undefined): void {
+  if (value) {
+    process.env[name] = value;
+  } else {
+    delete process.env[name];
+  }
+}
+
 export default defineConfig(({ mode }) => {
   // Load from azd environment if exists, otherwise fall back to frontend directory
   const azdEnvPath = resolve(__dirname, "../.azure");
@@ -18,10 +26,19 @@ export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, envDir, "");
   
   // Map to VITE_ prefixed vars for client access (Vite only exposes VITE_ prefixed vars)
-  process.env.VITE_ENTRA_SPA_CLIENT_ID = env.ENTRA_SPA_CLIENT_ID || env.VITE_ENTRA_SPA_CLIENT_ID;
-  process.env.VITE_ENTRA_TENANT_ID = env.ENTRA_TENANT_ID || env.VITE_ENTRA_TENANT_ID;
+  setClientEnvironmentVariable(
+    "VITE_ENTRA_SPA_CLIENT_ID",
+    env.ENTRA_SPA_CLIENT_ID || env.VITE_ENTRA_SPA_CLIENT_ID
+  );
+  setClientEnvironmentVariable(
+    "VITE_ENTRA_TENANT_ID",
+    env.ENTRA_TENANT_ID || env.VITE_ENTRA_TENANT_ID
+  );
   process.env.VITE_ENTRA_AUTHORITY = env.ENTRA_AUTHORITY || env.VITE_ENTRA_AUTHORITY || "https://login.microsoftonline.com";
-  process.env.VITE_ENTRA_API_SCOPE = env.ENTRA_API_SCOPE || env.VITE_ENTRA_API_SCOPE || env.ENTRA_SCOPE || env.VITE_ENTRA_SCOPE;
+  setClientEnvironmentVariable(
+    "VITE_ENTRA_API_SCOPE",
+    env.ENTRA_API_SCOPE || env.VITE_ENTRA_API_SCOPE || env.ENTRA_SCOPE || env.VITE_ENTRA_SCOPE
+  );
 
   return {
     plugins: [react(), envCheckPlugin()],

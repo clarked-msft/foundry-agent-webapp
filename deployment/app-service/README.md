@@ -97,7 +97,7 @@ az webapp config appsettings set -g rg-my-app -n my-foundry-agent-app --settings
   ENTRA_AUTHORITY=https://login.microsoftonline.com \
   AI_AGENT_ENDPOINT=<ai-foundry-project-endpoint> \
   AI_AGENT_ID=<agent-id> \
-  AI_SCOPE=https://ai.azure.com/.default \
+  AI_AUTH_SCOPE=https://ai.azure.com/.default \
   MANAGED_IDENTITY_CLIENT_ID=<identity-client-id>
 ```
 
