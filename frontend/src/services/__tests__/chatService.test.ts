@@ -147,4 +147,41 @@ describe('ChatService', () => {
       await expect(chatService.getConversationMessages('conv-123')).rejects.toThrow();
     });
   });
+
+  describe('sendMessage', () => {
+    it('preserves consecutive identical chunks in streamed Markdown tables', async () => {
+      const streamContent = [
+        'data: {"type":"conversationId","conversationId":"conv-1"}\n\n',
+        'data: {"type":"chunk","content":"|---"}\n\n',
+        'data: {"type":"chunk","content":"|---"}\n\n',
+        'data: {"type":"chunk","content":"|---"}\n\n',
+        'data: {"type":"chunk","content":"|---|\\n"}\n\n',
+        'data: {"type":"done"}\n\n',
+      ].join('');
+      const encodedContent = new TextEncoder().encode(streamContent);
+      const reader = {
+        read: vi.fn()
+          .mockResolvedValueOnce({ done: false, value: encodedContent })
+          .mockResolvedValueOnce({ done: true, value: undefined }),
+        releaseLock: vi.fn(),
+      };
+
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+        ok: true,
+        body: {
+          getReader: () => reader,
+        },
+      }));
+
+      await chatService.sendMessage('List incidents', null);
+
+      const streamedChunks = vi.mocked(mockDispatch).mock.calls
+        .map(([action]) => action)
+        .filter((action): action is Extract<AppAction, { type: 'CHAT_STREAM_CHUNK' }> =>
+          action.type === 'CHAT_STREAM_CHUNK')
+        .map(action => action.content);
+
+      expect(streamedChunks).toEqual(['|---', '|---', '|---', '|---|\n']);
+    });
+  });
 });
