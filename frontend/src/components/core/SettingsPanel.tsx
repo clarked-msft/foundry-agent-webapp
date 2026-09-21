@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { useMsal } from '@azure/msal-react';
 import {
   Drawer,
   DrawerHeader,
@@ -17,7 +18,7 @@ import {
   makeStyles,
   tokens,
 } from '@fluentui/react-components';
-import { Dismiss24Regular, Delete24Regular } from '@fluentui/react-icons';
+import { Dismiss24Regular, Delete24Regular, SignOut24Regular } from '@fluentui/react-icons';
 import { ThemePicker } from './ThemePicker';
 import type { ChatService } from '../../services/chatService';
 
@@ -89,10 +90,12 @@ function formatBytes(bytes: number): string {
 
 export const SettingsPanel: React.FC<SettingsPanelProps> = ({ isOpen, onOpenChange, chatService }) => {
   const styles = useStyles();
+  const { instance, accounts } = useMsal();
 
   const [filesInfo, setFilesInfo] = useState<{ count: number; totalBytes: number } | null>(null);
   const [loadingInfo, setLoadingInfo] = useState(false);
   const [cleaning, setCleaning] = useState(false);
+  const [signingOut, setSigningOut] = useState(false);
   const [status, setStatus] = useState<{ text: string; isError: boolean } | null>(null);
   const [confirmOpen, setConfirmOpen] = useState(false);
 
@@ -139,6 +142,20 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ isOpen, onOpenChan
     }
   };
 
+  const handleSignOut = async () => {
+    setSigningOut(true);
+    setStatus(null);
+    try {
+      await instance.logoutRedirect({
+        account: accounts[0],
+        postLogoutRedirectUri: window.location.origin,
+      });
+    } catch (err) {
+      setStatus({ text: err instanceof Error ? err.message : 'Sign out failed', isError: true });
+      setSigningOut(false);
+    }
+  };
+
   const count = filesInfo?.count ?? 0;
   const canCleanup = !loadingInfo && !cleaning && count > 0;
 
@@ -168,6 +185,23 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ isOpen, onOpenChan
         <div className={styles.section}>
           <div className={styles.sectionTitle}>Appearance</div>
           <ThemePicker />
+        </div>
+
+        <div className={styles.section}>
+          <div className={styles.sectionTitle}>Account</div>
+          <div className={styles.filesRow}>
+            {accounts[0]?.username && (
+              <Text className={styles.filesSummary}>{accounts[0].username}</Text>
+            )}
+            <Button
+              appearance="secondary"
+              icon={<SignOut24Regular />}
+              disabled={signingOut}
+              onClick={handleSignOut}
+            >
+              {signingOut ? 'Signing out…' : 'Sign out'}
+            </Button>
+          </div>
         </div>
 
         <div className={styles.section}>

@@ -93,6 +93,21 @@ if (!string.IsNullOrEmpty(tenantId))
     builder.Configuration["AzureAd:TenantId"] = tenantId;
 }
 
+var authorityHost = builder.Configuration["ENTRA_AUTHORITY"]
+    ?? builder.Configuration["AzureAd:Instance"]
+    ?? "https://login.microsoftonline.com/";
+
+if (!string.IsNullOrWhiteSpace(authorityHost))
+{
+    var normalizedAuthority = authorityHost.Trim();
+    if (!normalizedAuthority.EndsWith('/'))
+    {
+        normalizedAuthority += "/";
+    }
+
+    builder.Configuration["AzureAd:Instance"] = normalizedAuthority;
+}
+
 const string RequiredScope = "Chat.ReadWrite";
 const string ScopePolicyName = "RequireChatScope";
 

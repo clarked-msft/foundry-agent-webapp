@@ -16,6 +16,10 @@ $aiFoundryResourceGroup = azd env get-value AI_FOUNDRY_RESOURCE_GROUP 2>$null
 $aiFoundryResourceName = azd env get-value AI_FOUNDRY_RESOURCE_NAME 2>$null
 $subscriptionId = azd env get-value AZURE_SUBSCRIPTION_ID 2>$null
 $tenantId = azd env get-value ENTRA_TENANT_ID 2>$null
+$entraAuthority = azd env get-value ENTRA_AUTHORITY 2>$null
+$apiScope = azd env get-value ENTRA_API_SCOPE 2>$null
+if (-not $entraAuthority) { $entraAuthority = "https://login.microsoftonline.com/" }
+if (-not $apiScope) { $apiScope = "api://$clientId/Chat.ReadWrite" }
 
 if (-not $clientId) {
     Write-Host "[ERROR] ENTRA_SPA_CLIENT_ID not set (should be output from Bicep)" -ForegroundColor Red
@@ -183,6 +187,8 @@ $frontendEnv = @"
 # Auto-generated - Do not commit
 VITE_ENTRA_SPA_CLIENT_ID=$clientId
 VITE_ENTRA_TENANT_ID=$tenantId
+VITE_ENTRA_AUTHORITY=$entraAuthority
+VITE_ENTRA_API_SCOPE=$apiScope
 "@
 if ($backendClientId) {
     $frontendEnv += "`nVITE_ENTRA_BACKEND_CLIENT_ID=$backendClientId"
@@ -192,12 +198,13 @@ $frontendEnv | Out-File -FilePath "frontend/.env.local" -Encoding utf8 -Force
 # Backend .env
 $backendEnvContent = @"
 # Auto-generated - Do not commit
-AzureAd__Instance=https://login.microsoftonline.com/
+AzureAd__Instance=$entraAuthority
 AzureAd__TenantId=$tenantId
 AzureAd__ClientId=$clientId
 AzureAd__Audience=api://$clientId
 AI_AGENT_ENDPOINT=$aiAgentEndpoint
 AI_AGENT_ID=$aiAgentId
+AI_AUTH_SCOPE=https://ai.azure.com/.default
 "@
 if ($aiAgentVersion) {
     $backendEnvContent += "`nAI_AGENT_VERSION=$aiAgentVersion"

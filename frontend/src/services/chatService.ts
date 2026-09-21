@@ -321,7 +321,6 @@ export class ChatService {
 
   /**
    * Process Server-Sent Events stream from the API.
-   * Implements duplicate chunk suppression to prevent UI flicker.
    * 
    * @param response - Fetch Response object with SSE stream
    * @param messageId - ID of the assistant message being streamed
@@ -344,9 +343,7 @@ export class ChatService {
       this.dispatch({ type: 'CHAT_ERROR', error });
       throw error;
     }
-
     let newConversationId = currentConversationId;
-    let lastChunkContent: string | undefined;
     let buffer = '';
 
     try {
@@ -391,14 +388,11 @@ export class ChatService {
               break;
 
             case 'chunk':
-              if (event.data.content !== lastChunkContent) {
-                this.dispatch({
-                  type: 'CHAT_STREAM_CHUNK',
-                  messageId,
-                  content: event.data.content,
-                });
-                lastChunkContent = event.data.content;
-              }
+              this.dispatch({
+                type: 'CHAT_STREAM_CHUNK',
+                messageId,
+                content: event.data.content,
+              });
               break;
 
             case 'annotations':

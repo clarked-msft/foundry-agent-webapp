@@ -75,6 +75,21 @@ describe('appReducer', () => {
     });
   });
 
+  describe('AUTH_SIGNED_OUT', () => {
+    it('clears the user and sets status to unauthenticated', () => {
+      const state = createInitialState();
+      state.auth.status = 'authenticated';
+      state.auth.user = createMockUser();
+      const action: AppAction = { type: 'AUTH_SIGNED_OUT' };
+
+      const result = appReducer(state, action);
+
+      expect(result.auth.status).toBe('unauthenticated');
+      expect(result.auth.user).toBeNull();
+      expect(result.auth.error).toBeNull();
+    });
+  });
+
   describe('AUTH_TOKEN_EXPIRED', () => {
     it('sets status to unauthenticated', () => {
       const state = createInitialState();

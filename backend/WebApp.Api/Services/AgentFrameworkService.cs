@@ -24,6 +24,8 @@ namespace WebApp.Api.Services;
 /// </remarks>
 public class AgentFrameworkService : IDisposable
 {
+    internal const string DefaultAiAuthScope = "https://ai.azure.com/.default";
+
     private readonly string _agentEndpoint;
     private readonly string _agentId;
     /// <summary>
@@ -40,6 +42,11 @@ public class AgentFrameworkService : IDisposable
     private readonly string? _backendClientId;
     private readonly string? _tenantId;
     private readonly string? _managedIdentityClientId;
+    // Foundry auth scope precedence:
+    // 1) AI_AUTH_SCOPE (canonical)
+    // 2) AI_SCOPE (legacy fallback)
+    // 3) public cloud default
+    private readonly string _aiScope;
     private readonly bool _useObo;
     private readonly TokenCredential _fallbackCredential;
 
@@ -91,6 +98,7 @@ public class AgentFrameworkService : IDisposable
 
         _backendClientId = configuration["ENTRA_BACKEND_CLIENT_ID"];
         _tenantId = configuration["ENTRA_TENANT_ID"] ?? configuration["AzureAd:TenantId"];
+        _aiScope = ResolveAiAuthScope(configuration);
         // User-assigned MI client ID — used for MI-only mode and as FIC assertion in OBO mode
         _managedIdentityClientId = configuration["MANAGED_IDENTITY_CLIENT_ID"]
             ?? configuration["OBO_MANAGED_IDENTITY_CLIENT_ID"]; // backward compat
@@ -141,7 +149,7 @@ public class AgentFrameworkService : IDisposable
         else
         {
             _logger.LogInformation("MI mode: using managed identity for all API calls");
-            _projectClient = new AIProjectClient(new Uri(_agentEndpoint), _fallbackCredential);
+            _projectClient = CreateProjectClient(_fallbackCredential);
         }
 
         _logger.LogInformation("AIProjectClient initialized successfully");
@@ -155,7 +163,7 @@ public class AgentFrameworkService : IDisposable
         // MI mode: return cached client
         if (!_useObo)
         {
-            _projectClient ??= new AIProjectClient(new Uri(_agentEndpoint), _fallbackCredential);
+            _projectClient ??= CreateProjectClient(_fallbackCredential);
             return _projectClient;
         }
 
@@ -172,7 +180,7 @@ public class AgentFrameworkService : IDisposable
 
             var oboCredential = CreateOboCredential(userToken);
             _logger.LogDebug("Created OBO credential for request");
-            _projectClient = new AIProjectClient(new Uri(_agentEndpoint), oboCredential);
+            _projectClient = CreateProjectClient(oboCredential);
         }
 
         return _projectClient;
@@ -194,6 +202,29 @@ public class AgentFrameworkService : IDisposable
             assertionCallback,
             userToken,
             new OnBehalfOfCredentialOptions());
+    }
+
+    internal static string ResolveAiAuthScope(IConfiguration configuration)
+    {
+        var configuredScope = configuration["AI_AUTH_SCOPE"];
+        if (!string.IsNullOrWhiteSpace(configuredScope))
+        {
+            return configuredScope;
+        }
+
+        var legacyScope = configuration["AI_SCOPE"];
+        if (!string.IsNullOrWhiteSpace(legacyScope))
+        {
+            return legacyScope;
+        }
+
+        return DefaultAiAuthScope;
+    }
+
+    private AIProjectClient CreateProjectClient(TokenCredential credential)
+    {
+        var scopedCredential = new FoundryScopeTokenCredential(credential, _aiScope);
+        return new AIProjectClient(new Uri(_agentEndpoint), scopedCredential);
     }
 
     /// <summary>
@@ -1070,7 +1101,8 @@ public class AgentFrameworkService : IDisposable
             credential = _fallbackCredential;
         }
 
-        var tokenRequestContext = new TokenRequestContext(["https://ai.azure.com/.default"]);
+        credential = new FoundryScopeTokenCredential(credential, _aiScope);
+        var tokenRequestContext = new TokenRequestContext([_aiScope]);
         var accessToken = await credential.GetTokenAsync(tokenRequestContext, cancellationToken);
 
         var requestUrl = $"{_agentEndpoint.TrimEnd('/')}/openai/v1/containers/{Uri.EscapeDataString(containerId)}/files/{Uri.EscapeDataString(fileId)}/content";

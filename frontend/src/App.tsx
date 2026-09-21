@@ -1,5 +1,5 @@
 import { AuthenticatedTemplate, UnauthenticatedTemplate, useMsalAuthentication } from "@azure/msal-react";
-import { Spinner } from '@fluentui/react-components';
+import { Button, Spinner, Text } from '@fluentui/react-components';
 import { useAppState } from './hooks/useAppState';
 import { InteractionType } from "@azure/msal-browser";
 import { ErrorBoundary } from "./components/core/ErrorBoundary";
@@ -12,18 +12,35 @@ import "./App.css";
 
 function App() {
   // This hook handles authentication automatically - redirects if not authenticated
-  useMsalAuthentication(InteractionType.Redirect, loginRequest);
+  const { login, error: authenticationError } = useMsalAuthentication(InteractionType.Redirect, loginRequest);
   const { auth } = useAppState();
   const { getAccessToken } = useAuth();
   const [agentMetadata, setAgentMetadata] = useState<IAgentMetadata | null>(null);
   const [isLoadingAgent, setIsLoadingAgent] = useState(true);
+  const [signInError, setSignInError] = useState<string | null>(null);
+
+  const handleSignIn = useCallback(async () => {
+    setSignInError(null);
+    try {
+      await login();
+    } catch (error) {
+      setSignInError(error instanceof Error ? error.message : 'Sign in failed');
+    }
+  }, [login]);
 
   // Wrap fetchAgentMetadata in useCallback to make it stable for the effect
   const fetchAgentMetadata = useCallback(async () => {
-    if (auth.status !== 'authenticated') return;
+    if (auth.status !== 'authenticated') {
+      setIsLoadingAgent(false);
+      return;
+    }
 
+    setIsLoadingAgent(true);
     try {
       const token = await getAccessToken();
+      if (!token) {
+        throw new Error('Failed to acquire access token');
+      }
       const apiUrl = import.meta.env.VITE_API_URL || '/api';
       
       const response = await fetch(`${apiUrl}/agent`, {
@@ -66,7 +83,7 @@ function App() {
 
   return (
     <ErrorBoundary>
-      {auth.status === 'initializing' || isLoadingAgent ? (
+      {auth.status === 'initializing' || (auth.status === 'authenticated' && isLoadingAgent) ? (
         <div className="app-container" style={{ 
           display: 'flex', 
           alignItems: 'center', 
@@ -100,9 +117,19 @@ function App() {
               display: 'flex', 
               alignItems: 'center', 
               justifyContent: 'center', 
-              height: '100vh'
+              height: '100vh',
+              flexDirection: 'column',
+              gap: '1rem'
             }}>
-              <p>Signing in...</p>
+              <Text>Your session has ended.</Text>
+              <Button appearance="primary" onClick={handleSignIn}>
+                Sign in
+              </Button>
+              {(signInError || authenticationError) && (
+                <Text role="alert">
+                  {signInError || authenticationError?.message}
+                </Text>
+              )}
             </div>
           </UnauthenticatedTemplate>
         </>

@@ -23,6 +23,9 @@
     "aiAgentId": {
       "value": "${AI_AGENT_ID=}"
     },
+    "aiAuthScope": {
+      "value": "${AI_AUTH_SCOPE=https://ai.azure.com/.default}"
+    },
     "enableObo": {
       "value": "${ENABLE_OBO=false}"
     },

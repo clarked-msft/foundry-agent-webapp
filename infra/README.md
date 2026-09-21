@@ -109,6 +109,7 @@ az deployment sub create \
 | `entraTenantId` | `tenant().tenantId` | Entra tenant ID (auto-detected or from azd) |
 | `aiAgentEndpoint` | (from azd) | AI Agent endpoint URL |
 | `aiAgentId` | (from azd) | Agent name |
+| `aiAuthScope` | `https://ai.azure.com/.default` | Foundry auth scope injected as `AI_AUTH_SCOPE` |
 | `enableObo` | `false` | Enable OBO backend app + FIC + admin consent (backend app in Bicep; FIC + admin consent in postprovision.ps1) |
 
 ## Outputs
