@@ -52,9 +52,11 @@ function getAnnotationKey(annotation: IAnnotation): string {
  */
 export function parseContentWithCitations(
   content: string,
-  annotations: IAnnotation[] = []
+  annotations: IAnnotation[] | null | undefined = []
 ): ParsedContent {
-  if (!content || annotations.length === 0) {
+  const normalizedAnnotations = annotations ?? [];
+
+  if (!content || normalizedAnnotations.length === 0) {
     return {
       citations: [],
       processedText: content || '',
@@ -63,7 +65,7 @@ export function parseContentWithCitations(
 
   // Build a map of textToReplace -> annotation for quick lookup
   const annotationByPlaceholder = new Map<string, IAnnotation>();
-  annotations.forEach(annotation => {
+  normalizedAnnotations.forEach(annotation => {
     if (annotation.textToReplace) {
       annotationByPlaceholder.set(annotation.textToReplace, annotation);
     }
@@ -97,7 +99,7 @@ export function parseContentWithCitations(
   // This catches cases where the annotation doesn't have textToReplace set
   processedText = processedText.replace(CITATION_PATTERNS.assistants, (match, _id, label) => {
     // Try to find matching annotation by label or position
-    const matchingAnnotation = annotations.find(a => 
+    const matchingAnnotation = normalizedAnnotations.find(a =>
       a.label === label || 
       a.textToReplace === match ||
       (a.startIndex !== undefined && content.indexOf(match) >= a.startIndex)
