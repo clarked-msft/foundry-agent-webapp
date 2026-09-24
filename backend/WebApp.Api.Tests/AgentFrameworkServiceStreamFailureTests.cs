@@ -24,7 +24,7 @@ public class AgentFrameworkServiceStreamFailureTests
     }
 
     [TestMethod]
-    public void StreamErrorDetails_WhenMessageAndNestedMessageAreMissing_UsesRawPayload()
+    public void StreamErrorDetails_WhenMessageAndNestedMessageAreMissing_CapturesRawPayload()
     {
         const string rawPayload = "{\"type\":\"error\",\"error\":{\"code\":null}}";
 
@@ -33,7 +33,7 @@ public class AgentFrameworkServiceStreamFailureTests
             code: null,
             rawPayload: rawPayload);
 
-        Assert.AreEqual(rawPayload, details.Message);
+        Assert.AreEqual("The Responses API returned an error without a message.", details.Message);
         Assert.IsNull(details.Code);
         Assert.AreEqual(rawPayload, details.RawPayload);
     }

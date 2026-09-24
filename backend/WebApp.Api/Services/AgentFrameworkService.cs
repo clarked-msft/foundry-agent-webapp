@@ -590,7 +590,6 @@ public class AgentFrameworkService : IDisposable
         var resolvedMessage = FirstNonEmpty(
             message,
             nestedMessage,
-            rawPayload,
             resolvedCode,
             fallbackMessage);
 
@@ -620,8 +619,10 @@ public class AgentFrameworkService : IDisposable
         {
             return patch.ToBinaryData().ToString();
         }
-        catch
+        catch (Exception ex)
         {
+            logger.LogDebug(ex, "Unable to extract raw streaming error payload with primary path");
+
             try
             {
                 return patch.GetJson("$"u8).ToString();
