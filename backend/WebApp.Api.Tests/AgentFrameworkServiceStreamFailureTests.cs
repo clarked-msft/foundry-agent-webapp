@@ -1,4 +1,5 @@
 using Microsoft.VisualStudio.TestTools.UnitTesting;
+using OpenAI.Responses;
 using WebApp.Api.Services;
 
 namespace WebApp.Api.Tests;
@@ -66,5 +67,36 @@ public class AgentFrameworkServiceStreamFailureTests
         Assert.AreEqual("Upstream MCP server failed", details.Message);
         Assert.AreEqual("upstream_mcp_error", details.Code);
         Assert.AreEqual(rawPayload, details.RawPayload);
+    }
+
+    [TestMethod]
+    public void StreamErrorDetails_WhenOnlyCodeExists_UsesFallbackMessageAndCapturesCode()
+    {
+        var details = AgentFrameworkService.CreateStreamErrorDetails(
+            message: null,
+            code: "mcp_tool_failed",
+            rawPayload: null);
+
+        Assert.AreEqual("The Responses API returned an error without a message.", details.Message);
+        Assert.AreEqual("mcp_tool_failed", details.Code);
+        Assert.IsNull(details.RawPayload);
+    }
+
+    [TestMethod]
+    public void ClassifyUnhandledStreamUpdate_TreatsMcpArgumentDeltaAsExpectedLifecycle()
+    {
+        var handling = AgentFrameworkService.ClassifyUnhandledStreamUpdate(
+            new StreamingResponseMcpCallArgumentsDeltaUpdate());
+
+        Assert.AreEqual(AgentFrameworkService.StreamUpdateHandling.ExpectedLifecycle, handling);
+    }
+
+    [TestMethod]
+    public void ClassifyUnhandledStreamUpdate_TreatsUnhandledUpdateAsUnknown()
+    {
+        var handling = AgentFrameworkService.ClassifyUnhandledStreamUpdate(
+            new StreamingResponseErrorUpdate());
+
+        Assert.AreEqual(AgentFrameworkService.StreamUpdateHandling.Unknown, handling);
     }
 }

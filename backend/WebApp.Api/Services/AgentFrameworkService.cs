@@ -535,7 +535,7 @@ public class AgentFrameworkService : IDisposable
 
                 throw new InvalidOperationException($"Stream error: {failure.Message}");
             }
-            else if (IsExpectedStreamLifecycleUpdate(update))
+            else if (ClassifyUnhandledStreamUpdate(update) == StreamUpdateHandling.ExpectedLifecycle)
             {
                 _logger.LogTrace(
                     "Ignoring expected stream lifecycle update: {Type}",
@@ -553,6 +553,12 @@ public class AgentFrameworkService : IDisposable
     }
 
     internal sealed record StreamFailureDetails(string Message, string? Code, string? RawPayload);
+
+    internal enum StreamUpdateHandling
+    {
+        ExpectedLifecycle,
+        Unknown
+    }
 
     internal static StreamFailureDetails CreateStreamErrorDetails(
         string? message,
@@ -590,13 +596,12 @@ public class AgentFrameworkService : IDisposable
         var resolvedMessage = FirstNonEmpty(
             message,
             nestedMessage,
-            resolvedCode,
             fallbackMessage);
 
         return new StreamFailureDetails(resolvedMessage, resolvedCode, rawPayload);
     }
 
-    private static bool IsExpectedStreamLifecycleUpdate(StreamingResponseUpdate update)
+    internal static StreamUpdateHandling ClassifyUnhandledStreamUpdate(StreamingResponseUpdate update)
     {
         return update is
             StreamingResponseInProgressUpdate or
@@ -608,7 +613,9 @@ public class AgentFrameworkService : IDisposable
             StreamingResponseMcpCallInProgressUpdate or
             StreamingResponseMcpCallArgumentsDeltaUpdate or
             StreamingResponseMcpCallArgumentsDoneUpdate or
-            StreamingResponseMcpCallCompletedUpdate;
+            StreamingResponseMcpCallCompletedUpdate
+                ? StreamUpdateHandling.ExpectedLifecycle
+                : StreamUpdateHandling.Unknown;
     }
 
     private static string? TryExtractRawPayload(
