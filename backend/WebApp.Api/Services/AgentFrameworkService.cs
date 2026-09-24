@@ -510,7 +510,7 @@ public class AgentFrameworkService : IDisposable
                 var failure = CreateResponseFailedDetails(
                     failedUpdate.Response?.Error?.Message,
                     failedUpdate.Response?.Error?.Code.ToString(),
-                    TryExtractRawPayload(failedUpdate.Patch));
+                    TryExtractRawPayload(failedUpdate.Patch, _logger));
 
                 _logger.LogError(
                     "Stream response failed: Message={Message}, Code={Code}, Raw={RawError}",
@@ -525,7 +525,7 @@ public class AgentFrameworkService : IDisposable
                 var failure = CreateStreamErrorDetails(
                     errorUpdate.Message,
                     errorUpdate.Code,
-                    TryExtractRawPayload(errorUpdate.Patch));
+                    TryExtractRawPayload(errorUpdate.Patch, _logger));
 
                 _logger.LogError(
                     "Stream error: Message={Message}, Code={Code}, Raw={RawError}",
@@ -559,17 +559,11 @@ public class AgentFrameworkService : IDisposable
         string? code,
         string? rawPayload)
     {
-        var nestedMessage = TryExtractNestedErrorField(rawPayload, "message");
-        var nestedCode = TryExtractNestedErrorField(rawPayload, "code");
-        var resolvedCode = FirstNonEmpty(code, nestedCode);
-        var resolvedMessage = FirstNonEmpty(
+        return CreateFailureDetails(
             message,
-            nestedMessage,
-            resolvedCode,
+            code,
             rawPayload,
             "The Responses API returned an error without a message.");
-
-        return new StreamFailureDetails(resolvedMessage, resolvedCode, rawPayload);
     }
 
     internal static StreamFailureDetails CreateResponseFailedDetails(
@@ -577,15 +571,28 @@ public class AgentFrameworkService : IDisposable
         string? code,
         string? rawPayload)
     {
+        return CreateFailureDetails(
+            message,
+            code,
+            rawPayload,
+            "The response failed without an error message.");
+    }
+
+    private static StreamFailureDetails CreateFailureDetails(
+        string? message,
+        string? code,
+        string? rawPayload,
+        string fallbackMessage)
+    {
         var nestedMessage = TryExtractNestedErrorField(rawPayload, "message");
         var nestedCode = TryExtractNestedErrorField(rawPayload, "code");
         var resolvedCode = FirstNonEmpty(code, nestedCode);
         var resolvedMessage = FirstNonEmpty(
             message,
             nestedMessage,
-            resolvedCode,
             rawPayload,
-            "The response failed without an error message.");
+            resolvedCode,
+            fallbackMessage);
 
         return new StreamFailureDetails(resolvedMessage, resolvedCode, rawPayload);
     }
@@ -605,7 +612,9 @@ public class AgentFrameworkService : IDisposable
             StreamingResponseMcpCallCompletedUpdate;
     }
 
-    private static string? TryExtractRawPayload(System.ClientModel.Primitives.JsonPatch patch)
+    private static string? TryExtractRawPayload(
+        System.ClientModel.Primitives.JsonPatch patch,
+        ILogger logger)
     {
         try
         {
@@ -617,8 +626,9 @@ public class AgentFrameworkService : IDisposable
             {
                 return patch.GetJson("$"u8).ToString();
             }
-            catch
+            catch (Exception ex)
             {
+                logger.LogDebug(ex, "Unable to extract raw streaming error payload");
                 return null;
             }
         }
