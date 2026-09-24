@@ -8,11 +8,13 @@ using OpenAI.Responses;
 using Microsoft.Identity.Client;
 using Microsoft.Identity.Web;
 using System.Runtime.CompilerServices;
+using System.Text.Json;
 using WebApp.Api.Models;
 
 namespace WebApp.Api.Services;
 
 #pragma warning disable OPENAI001
+#pragma warning disable SCME0001
 
 /// <summary>
 /// Foundry Agent Service using v2 Agents API.
@@ -503,18 +505,162 @@ public class AgentFrameworkService : IDisposable
             {
                 _lastUsage = completedUpdate.Response.Usage;
             }
+            else if (update is StreamingResponseFailedUpdate failedUpdate)
+            {
+                var failure = CreateResponseFailedDetails(
+                    failedUpdate.Response?.Error?.Message,
+                    failedUpdate.Response?.Error?.Code.ToString(),
+                    TryExtractRawPayload(failedUpdate.Patch));
+
+                _logger.LogError(
+                    "Stream response failed: Message={Message}, Code={Code}, Raw={RawError}",
+                    failedUpdate.Response?.Error?.Message,
+                    failedUpdate.Response?.Error?.Code.ToString(),
+                    failure.RawPayload);
+
+                throw new InvalidOperationException($"Stream failed: {failure.Message}");
+            }
             else if (update is StreamingResponseErrorUpdate errorUpdate)
             {
-                _logger.LogError("Stream error: {Error}", errorUpdate.Message);
-                throw new InvalidOperationException($"Stream error: {errorUpdate.Message}");
+                var failure = CreateStreamErrorDetails(
+                    errorUpdate.Message,
+                    errorUpdate.Code,
+                    TryExtractRawPayload(errorUpdate.Patch));
+
+                _logger.LogError(
+                    "Stream error: Message={Message}, Code={Code}, Raw={RawError}",
+                    errorUpdate.Message,
+                    errorUpdate.Code,
+                    failure.RawPayload);
+
+                throw new InvalidOperationException($"Stream error: {failure.Message}");
+            }
+            else if (IsExpectedStreamLifecycleUpdate(update))
+            {
+                _logger.LogTrace(
+                    "Ignoring expected stream lifecycle update: {Type}",
+                    update.GetType().Name);
             }
             else
             {
-                _logger.LogDebug("Unhandled stream update type: {Type}", update.GetType().Name);
+                _logger.LogWarning(
+                    "Unknown stream update type: {Type}",
+                    update.GetType().FullName);
             }
         }
 
         _logger.LogInformation("Completed streaming for conversation: {ConversationId}", conversationId);
+    }
+
+    internal sealed record StreamFailureDetails(string Message, string? Code, string? RawPayload);
+
+    internal static StreamFailureDetails CreateStreamErrorDetails(
+        string? message,
+        string? code,
+        string? rawPayload)
+    {
+        var nestedMessage = TryExtractNestedErrorField(rawPayload, "message");
+        var nestedCode = TryExtractNestedErrorField(rawPayload, "code");
+        var resolvedCode = FirstNonEmpty(code, nestedCode);
+        var resolvedMessage = FirstNonEmpty(
+            message,
+            nestedMessage,
+            resolvedCode,
+            rawPayload,
+            "The Responses API returned an error without a message.");
+
+        return new StreamFailureDetails(resolvedMessage, resolvedCode, rawPayload);
+    }
+
+    internal static StreamFailureDetails CreateResponseFailedDetails(
+        string? message,
+        string? code,
+        string? rawPayload)
+    {
+        var nestedMessage = TryExtractNestedErrorField(rawPayload, "message");
+        var nestedCode = TryExtractNestedErrorField(rawPayload, "code");
+        var resolvedCode = FirstNonEmpty(code, nestedCode);
+        var resolvedMessage = FirstNonEmpty(
+            message,
+            nestedMessage,
+            resolvedCode,
+            rawPayload,
+            "The response failed without an error message.");
+
+        return new StreamFailureDetails(resolvedMessage, resolvedCode, rawPayload);
+    }
+
+    private static bool IsExpectedStreamLifecycleUpdate(StreamingResponseUpdate update)
+    {
+        return update is
+            StreamingResponseInProgressUpdate or
+            StreamingResponseOutputTextDoneUpdate or
+            StreamingResponseContentPartAddedUpdate or
+            StreamingResponseContentPartDoneUpdate or
+            StreamingResponseMcpListToolsInProgressUpdate or
+            StreamingResponseMcpListToolsCompletedUpdate or
+            StreamingResponseMcpCallInProgressUpdate or
+            StreamingResponseMcpCallArgumentsDeltaUpdate or
+            StreamingResponseMcpCallArgumentsDoneUpdate or
+            StreamingResponseMcpCallCompletedUpdate;
+    }
+
+    private static string? TryExtractRawPayload(System.ClientModel.Primitives.JsonPatch patch)
+    {
+        try
+        {
+            return patch.ToBinaryData().ToString();
+        }
+        catch
+        {
+            try
+            {
+                return patch.GetJson("$"u8).ToString();
+            }
+            catch
+            {
+                return null;
+            }
+        }
+    }
+
+    private static string? TryExtractNestedErrorField(string? rawPayload, string fieldName)
+    {
+        if (string.IsNullOrWhiteSpace(rawPayload))
+        {
+            return null;
+        }
+
+        try
+        {
+            using var document = JsonDocument.Parse(rawPayload);
+            if (document.RootElement.TryGetProperty("error", out var error)
+                && error.ValueKind == JsonValueKind.Object
+                && error.TryGetProperty(fieldName, out var nestedValue)
+                && nestedValue.ValueKind == JsonValueKind.String)
+            {
+                return nestedValue.GetString();
+            }
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+
+        return null;
+    }
+
+    private static string FirstNonEmpty(params string?[] values)
+    {
+        foreach (var value in values)
+        {
+            if (!string.IsNullOrWhiteSpace(value))
+            {
+                return value;
+            }
+        }
+
+        return string.Empty;
     }
 
     /// <summary>
