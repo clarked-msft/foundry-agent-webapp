@@ -55,6 +55,36 @@ public class AgentFrameworkServiceConfigTests
     }
 
     [TestMethod]
+    public void OboTokenExchangeAudience_UsesConfiguredValue()
+    {
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["OBO_TOKEN_EXCHANGE_AUDIENCE"] = "  api://AzureADTokenExchangeCustomCloud  "
+            })
+            .Build();
+
+        var resolvedAudience = AgentFrameworkService.ResolveOboTokenExchangeAudience(configuration);
+
+        Assert.AreEqual("api://AzureADTokenExchangeCustomCloud", resolvedAudience);
+    }
+
+    [TestMethod]
+    public void OboTokenExchangeAudience_UsesPublicCloudDefaultWhenMissing()
+    {
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["OBO_TOKEN_EXCHANGE_AUDIENCE"] = " "
+            })
+            .Build();
+
+        var resolvedAudience = AgentFrameworkService.ResolveOboTokenExchangeAudience(configuration);
+
+        Assert.AreEqual(AgentFrameworkService.DefaultOboTokenExchangeAudience, resolvedAudience);
+    }
+
+    [TestMethod]
     public void UseObo_TrueWhenBackendClientIdAndTenantIdSet()
     {
         // OBO requires: ENTRA_BACKEND_CLIENT_ID + ENTRA_TENANT_ID + not Development

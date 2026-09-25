@@ -27,6 +27,7 @@ namespace WebApp.Api.Services;
 public class AgentFrameworkService : IDisposable
 {
     internal const string DefaultAiAuthScope = "https://ai.azure.com/.default";
+    internal const string DefaultOboTokenExchangeAudience = "api://AzureADTokenExchange";
 
     private readonly string _agentEndpoint;
     private readonly string _agentId;
@@ -44,6 +45,7 @@ public class AgentFrameworkService : IDisposable
     private readonly string? _backendClientId;
     private readonly string? _tenantId;
     private readonly string? _managedIdentityClientId;
+    private readonly string _oboTokenExchangeAudience;
     // Foundry auth scope precedence:
     // 1) AI_AUTH_SCOPE (canonical)
     // 2) AI_SCOPE (legacy fallback)
@@ -101,6 +103,7 @@ public class AgentFrameworkService : IDisposable
         _backendClientId = configuration["ENTRA_BACKEND_CLIENT_ID"];
         _tenantId = configuration["ENTRA_TENANT_ID"] ?? configuration["AzureAd:TenantId"];
         _aiScope = ResolveAiAuthScope(configuration);
+        _oboTokenExchangeAudience = ResolveOboTokenExchangeAudience(configuration);
         // User-assigned MI client ID — used for MI-only mode and as FIC assertion in OBO mode
         _managedIdentityClientId = configuration["MANAGED_IDENTITY_CLIENT_ID"]
             ?? configuration["OBO_MANAGED_IDENTITY_CLIENT_ID"]; // backward compat
@@ -140,11 +143,16 @@ public class AgentFrameworkService : IDisposable
                     "OBO mode requires MANAGED_IDENTITY_CLIENT_ID to be set for the FIC assertion. " +
                     "This is the user-assigned managed identity that acts as the federated credential.");
             }
-            _logger.LogInformation("OBO mode enabled: backendClientId={BackendClientId}. All API calls use user-delegated identity.", _backendClientId);
+            _logger.LogInformation(
+                "OBO mode enabled: backendClientId={BackendClientId}, tokenExchangeAudience={TokenExchangeAudience}. All API calls use user-delegated identity.",
+                _backendClientId,
+                _oboTokenExchangeAudience);
 
             // Initialize MI assertion eagerly — avoids thread-safety issues with lazy init
             // in CreateOboCredential(). Safe here because the constructor runs once per scoped instance.
-            s_miAssertion ??= new ManagedIdentityClientAssertion(managedIdentityClientId: _managedIdentityClientId);
+            s_miAssertion ??= new ManagedIdentityClientAssertion(
+                managedIdentityClientId: _managedIdentityClientId,
+                tokenExchangeUrl: _oboTokenExchangeAudience);
 
             // No cached project client in OBO mode — created per-request with user's token
         }
@@ -221,6 +229,14 @@ public class AgentFrameworkService : IDisposable
         }
 
         return DefaultAiAuthScope;
+    }
+
+    internal static string ResolveOboTokenExchangeAudience(IConfiguration configuration)
+    {
+        var configuredAudience = configuration["OBO_TOKEN_EXCHANGE_AUDIENCE"];
+        return string.IsNullOrWhiteSpace(configuredAudience)
+            ? DefaultOboTokenExchangeAudience
+            : configuredAudience.Trim();
     }
 
     private AIProjectClient CreateProjectClient(TokenCredential credential)
