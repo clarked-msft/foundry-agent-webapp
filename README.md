@@ -364,7 +364,7 @@ OBO replaces the managed identity with the **user's own identity** for Agent Ser
 └──────────┘              └──────────────┘                     └──────────────┘
                                 │
                                 │ 1. ManagedIdentityClientAssertion
-                                │    → gets MI token (audience: api://AzureADTokenExchange)
+                                │    → gets MI token (audience: OBO_TOKEN_EXCHANGE_AUDIENCE)
                                 │
                                 │ 2. OnBehalfOfCredential(tenantId, backendClientId,
                                 │      miAssertionCallback, userJWT)
@@ -384,10 +384,12 @@ OBO replaces the managed identity with the **user's own identity** for Agent Ser
 
 ```powershell
 azd env set ENABLE_OBO true
+# Non-public clouds only:
+# azd env set OBO_TOKEN_EXCHANGE_AUDIENCE "api://AzureADTokenExchange<CloudSuffix>"
 azd up
 ```
 
-This creates a backend API app registration with FIC, sets `api://{backendClientId}` identifier URI, and attempts admin consent. If consent fails, follow the printed instructions.
+This creates a backend API app registration with FIC, sets `api://{backendClientId}` identifier URI, and attempts admin consent. `OBO_TOKEN_EXCHANGE_AUDIENCE` defaults to `api://AzureADTokenExchange` and must match the audience required by the target cloud. If consent fails, follow the printed instructions.
 
 #### RBAC & Consent Requirements
 

@@ -65,9 +65,11 @@ AzureAd__TenantId=...
 AI_AGENT_ENDPOINT=...
 AI_AGENT_ID=...
 AI_AUTH_SCOPE=https://ai.azure.com/.default
+OBO_TOKEN_EXCHANGE_AUDIENCE=api://AzureADTokenExchange
 ```
 
 `AI_AUTH_SCOPE` is the canonical Foundry token scope. `AI_SCOPE` remains supported as a legacy fallback when `AI_AUTH_SCOPE` is not set.
+`OBO_TOKEN_EXCHANGE_AUDIENCE` defaults to the public-cloud audience and only needs to be set for OBO deployments in another cloud.
 
 Environment variables are loaded before ASP.NET Core configuration builder runs.
 

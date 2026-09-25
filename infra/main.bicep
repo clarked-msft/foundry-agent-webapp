@@ -28,6 +28,9 @@ param serviceManagementReference string = ''
 @description('Enable OBO (On-Behalf-Of) flow for user-delegated access to Agent Service (secretless via FIC)')
 param enableObo bool = false
 
+@description('Audience for the managed identity token used as the OBO federated client assertion. Override for non-public clouds.')
+param oboTokenExchangeAudience string = 'api://AzureADTokenExchange'
+
 @description('Container image for web service (set by postprovision hook)')
 param webImageName string = 'mcr.microsoft.com/k8se/quickstart:latest'  // Placeholder during initial provision
 
@@ -92,6 +95,7 @@ module app 'main-app.bicep' = {
     entraSpaClientId: entraApp.outputs.clientAppId
     entraTenantId: entraTenantId
     entraBackendClientId: enableObo ? entraApp.outputs.backendClientAppId : ''
+    oboTokenExchangeAudience: oboTokenExchangeAudience
     webImageName: webImageName
     userAssignedIdentityId: infrastructure.outputs.managedIdentityId
     oboManagedIdentityClientId: infrastructure.outputs.managedIdentityClientId

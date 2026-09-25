@@ -44,6 +44,10 @@
       "type": "string",
       "defaultValue": ""
     },
+    "oboTokenExchangeAudience": {
+      "type": "string",
+      "defaultValue": "api://AzureADTokenExchange"
+    },
     "webImageName": {
       "type": "string"
     },
@@ -126,7 +130,7 @@
         "value": "[parameters('oboManagedIdentityClientId')]"
       }
     ],
-    "oboEnv": "[if(not(empty(parameters('entraBackendClientId'))), createArray(createObject('name', 'ENTRA_BACKEND_CLIENT_ID', 'value', parameters('entraBackendClientId'))), createArray())]",
+    "oboEnv": "[if(not(empty(parameters('entraBackendClientId'))), createArray(createObject('name', 'ENTRA_BACKEND_CLIENT_ID', 'value', parameters('entraBackendClientId')), createObject('name', 'OBO_TOKEN_EXCHANGE_AUDIENCE', 'value', parameters('oboTokenExchangeAudience'))), createArray())]",
     "containerEnv": "[concat(variables('baseEnv'), variables('miEnv'), variables('oboEnv'))]"
   },
   "resources": [

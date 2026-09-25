@@ -101,7 +101,7 @@ az webapp config appsettings set -g rg-my-app -n my-foundry-agent-app --settings
   MANAGED_IDENTITY_CLIENT_ID=<identity-client-id>
 ```
 
-Add `ENTRA_BACKEND_CLIENT_ID` only if you're using OBO (see step 6).
+Add `ENTRA_BACKEND_CLIENT_ID` only if you're using OBO (see step 6). For non-public clouds, also set `OBO_TOKEN_EXCHANGE_AUDIENCE` to the cloud-specific token exchange audience.
 
 > App Service injects these as environment variables at container startup, same as Container
 > Apps — no code changes needed. `WEBSITES_PORT=8080` must also be set so App Service proxies
@@ -141,7 +141,7 @@ az ad app federated-credential create --id <backend-app-object-id> --parameters 
   "name": "app-service-mi-fic",
   "issuer": "https://login.microsoftonline.com/<tenant-id>/v2.0",
   "subject": "<app-service-identity-principal-id>",
-  "audiences": ["api://AzureADTokenExchange"]
+  "audiences": ["<value-of-OBO_TOKEN_EXCHANGE_AUDIENCE>"]
 }'
 ```
 

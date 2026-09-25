@@ -18,8 +18,10 @@ $subscriptionId = azd env get-value AZURE_SUBSCRIPTION_ID 2>$null
 $tenantId = azd env get-value ENTRA_TENANT_ID 2>$null
 $entraAuthority = azd env get-value ENTRA_AUTHORITY 2>$null
 $apiScope = azd env get-value ENTRA_API_SCOPE 2>$null
+$oboTokenExchangeAudience = azd env get-value OBO_TOKEN_EXCHANGE_AUDIENCE 2>$null
 if (-not $entraAuthority) { $entraAuthority = "https://login.microsoftonline.com/" }
 if (-not $apiScope) { $apiScope = "api://$clientId/Chat.ReadWrite" }
+if (-not $oboTokenExchangeAudience) { $oboTokenExchangeAudience = "api://AzureADTokenExchange" }
 
 if (-not $clientId) {
     Write-Host "[ERROR] ENTRA_SPA_CLIENT_ID not set (should be output from Bicep)" -ForegroundColor Red
@@ -85,27 +87,38 @@ if ($backendClientId) {
     }
     
     # Create Federated Identity Credential (MI → backend app, secretless OBO)
+    $ficProperties = @{
+        name = "container-app-mi-fic"
+        issuer = "https://login.microsoftonline.com/$tenantId/v2.0"
+        subject = $webIdentityPrincipalId
+        audiences = @($oboTokenExchangeAudience)
+        description = "User-assigned managed identity for secretless OBO"
+    }
     $existingFic = az ad app federated-credential list --id $backendObjectId --query "[?name=='container-app-mi-fic']" 2>$null | ConvertFrom-Json
-    if ($existingFic -and $existingFic.Count -gt 0) {
+    $existingFicMatches = $existingFic `
+        -and $existingFic.Count -gt 0 `
+        -and $existingFic[0].issuer -eq $ficProperties.issuer `
+        -and $existingFic[0].subject -eq $ficProperties.subject `
+        -and $existingFic[0].audiences.Count -eq 1 `
+        -and $existingFic[0].audiences[0] -eq $oboTokenExchangeAudience
+    if ($existingFicMatches) {
         Write-Host "[OK] FIC already exists" -ForegroundColor Green
     } else {
-        $ficBody = @{
-            name = "container-app-mi-fic"
-            issuer = "https://login.microsoftonline.com/$tenantId/v2.0"
-            subject = $webIdentityPrincipalId
-            audiences = @("api://AzureADTokenExchange")
-            description = "User-assigned managed identity for secretless OBO"
-        } | ConvertTo-Json
         $ficFile = [System.IO.Path]::GetTempFileName()
         try {
-            $ficBody | Out-File -FilePath $ficFile -Encoding utf8
-            az ad app federated-credential create --id $backendObjectId --parameters $ficFile 2>$null | Out-Null
+            if ($existingFic -and $existingFic.Count -gt 0) {
+                $null = $ficProperties.Remove("name")
+                $ficProperties | ConvertTo-Json | Out-File -FilePath $ficFile -Encoding utf8
+                az ad app federated-credential update --id $backendObjectId --federated-credential-id "container-app-mi-fic" --parameters $ficFile 2>$null | Out-Null
+            } else {
+                $ficProperties | ConvertTo-Json | Out-File -FilePath $ficFile -Encoding utf8
+                az ad app federated-credential create --id $backendObjectId --parameters $ficFile 2>$null | Out-Null
+            }
             if ($LASTEXITCODE -ne 0) {
-                Write-Host "[ERROR] FIC creation failed — OBO will not work without it" -ForegroundColor Red
-                Write-Host "  Create manually: az ad app federated-credential create --id $backendObjectId --parameters <json>"
+                Write-Host "[ERROR] FIC configuration failed — OBO will not work without it" -ForegroundColor Red
                 exit 1
             }
-            Write-Host "[OK] FIC created (MI → backend app)" -ForegroundColor Green
+            Write-Host "[OK] FIC configured (audience: $oboTokenExchangeAudience)" -ForegroundColor Green
         } finally {
             Remove-Item $ficFile -ErrorAction SilentlyContinue
         }

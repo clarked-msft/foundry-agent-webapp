@@ -111,6 +111,7 @@ az deployment sub create \
 | `aiAgentId` | (from azd) | Agent name |
 | `aiAuthScope` | `https://ai.azure.com/.default` | Foundry auth scope injected as `AI_AUTH_SCOPE` |
 | `enableObo` | `false` | Enable OBO backend app + FIC + admin consent (backend app in Bicep; FIC + admin consent in postprovision.ps1) |
+| `oboTokenExchangeAudience` | `api://AzureADTokenExchange` | Managed identity token audience used by the OBO FIC; override for non-public clouds |
 
 ## Outputs
 
