@@ -650,9 +650,9 @@ public class AgentFrameworkService : IDisposable
             {
                 return patch.GetJson("$"u8).ToString();
             }
-            catch (Exception ex)
+            catch (Exception fallbackException)
             {
-                logger.LogDebug(ex, "Unable to extract raw streaming error payload");
+                logger.LogDebug(fallbackException, "Unable to extract raw streaming error payload");
                 return null;
             }
         }
