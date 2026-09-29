@@ -703,9 +703,10 @@ public class AgentFrameworkService : IDisposable
         {
             var op = TryGetStringProperty(operation, "op");
             var path = TryGetStringProperty(operation, "path");
-            if (op is not ("add" or "replace")
-                || path is null
-                || !operation.TryGetProperty("value", out var value))
+            JsonElement value = default;
+            if (path is null
+                || !(op == "remove"
+                    || ((op is "add" or "replace") && operation.TryGetProperty("value", out value))))
             {
                 continue;
             }
@@ -714,20 +715,15 @@ public class AgentFrameworkService : IDisposable
                 ? []
                 : path.Split('/').Skip(1).Select(UnescapeJsonPointerSegment).ToArray();
 
-            var candidate = segments switch
+            // Operations apply in order, so any later write or removal of the field overwrites earlier values.
+            result = segments switch
             {
                 [] => TryGetNestedErrorField(value, fieldName),
                 ["error"] => TryGetStringProperty(value, fieldName),
-                ["error", var field] when field == fieldName && value.ValueKind == JsonValueKind.String
-                    => value.GetString(),
-                _ => null
+                ["error", var field] when field == fieldName
+                    => value.ValueKind == JsonValueKind.String ? value.GetString() : null,
+                _ => result
             };
-
-            // Later operations win, matching patch application order.
-            if (candidate is not null)
-            {
-                result = candidate;
-            }
         }
 
         return result;

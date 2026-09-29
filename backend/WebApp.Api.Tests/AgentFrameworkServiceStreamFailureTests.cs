@@ -184,6 +184,21 @@ public class AgentFrameworkServiceStreamFailureTests
     }
 
     [TestMethod]
+    [DataRow("""[{"op":"add","path":"/error","value":{"code":"c","message":"m"}},{"op":"remove","path":"/error"}]""")]
+    [DataRow("""[{"op":"add","path":"/error","value":{"code":"c","message":"m"}},{"op":"replace","path":"/error","value":{}}]""")]
+    [DataRow("""[{"op":"add","path":"/error/message","value":"m"},{"op":"add","path":"/error/code","value":"c"},{"op":"remove","path":"/error/message"},{"op":"replace","path":"/error/code","value":null}]""")]
+    public void StreamErrorDetails_WhenLaterPatchOperationClearsError_UsesFallback(string rawPayload)
+    {
+        var details = AgentFrameworkService.CreateStreamErrorDetails(
+            message: null,
+            code: null,
+            rawPayload: rawPayload);
+
+        Assert.AreEqual("The Responses API returned an error without a message.", details.Message);
+        Assert.IsNull(details.Code);
+    }
+
+    [TestMethod]
     [DataRow("not json")]
     [DataRow("{\"error\":")]
     [DataRow("42")]
