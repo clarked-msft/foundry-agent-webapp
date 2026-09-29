@@ -614,7 +614,10 @@ public class AgentFrameworkService : IDisposable
             nestedMessage,
             fallbackMessage);
 
-        return new StreamFailureDetails(resolvedMessage, resolvedCode, rawPayload);
+        return new StreamFailureDetails(
+            resolvedMessage,
+            resolvedCode.Length > 0 ? resolvedCode : null,
+            rawPayload);
     }
 
     internal static StreamUpdateHandling ClassifyUnhandledStreamUpdate(StreamingResponseUpdate update)
@@ -668,21 +671,79 @@ public class AgentFrameworkService : IDisposable
         try
         {
             using var document = JsonDocument.Parse(rawPayload);
-            if (document.RootElement.TryGetProperty("error", out var error)
-                && error.ValueKind == JsonValueKind.Object
-                && error.TryGetProperty(fieldName, out var nestedValue)
-                && nestedValue.ValueKind == JsonValueKind.String)
+            var root = document.RootElement;
+
+            // JsonPatch.ToBinaryData() serializes RFC 6902 operations (a JSON array), not the model object.
+            return root.ValueKind switch
             {
-                return nestedValue.GetString();
-            }
+                JsonValueKind.Object => TryGetNestedErrorField(root, fieldName),
+                JsonValueKind.Array => TryGetNestedErrorFieldFromPatchOperations(root, fieldName),
+                _ => null
+            };
         }
         catch (JsonException)
         {
             return null;
         }
-
-        return null;
     }
+
+    private static string? TryGetNestedErrorField(JsonElement payload, string fieldName)
+    {
+        return payload.ValueKind == JsonValueKind.Object
+            && payload.TryGetProperty("error", out var error)
+                ? TryGetStringProperty(error, fieldName)
+                : null;
+    }
+
+    private static string? TryGetNestedErrorFieldFromPatchOperations(JsonElement operations, string fieldName)
+    {
+        string? result = null;
+
+        foreach (var operation in operations.EnumerateArray())
+        {
+            var op = TryGetStringProperty(operation, "op");
+            var path = TryGetStringProperty(operation, "path");
+            if (op is not ("add" or "replace")
+                || path is null
+                || !operation.TryGetProperty("value", out var value))
+            {
+                continue;
+            }
+
+            var segments = path.Length == 0
+                ? []
+                : path.Split('/').Skip(1).Select(UnescapeJsonPointerSegment).ToArray();
+
+            var candidate = segments switch
+            {
+                [] => TryGetNestedErrorField(value, fieldName),
+                ["error"] => TryGetStringProperty(value, fieldName),
+                ["error", var field] when field == fieldName && value.ValueKind == JsonValueKind.String
+                    => value.GetString(),
+                _ => null
+            };
+
+            // Later operations win, matching patch application order.
+            if (candidate is not null)
+            {
+                result = candidate;
+            }
+        }
+
+        return result;
+    }
+
+    private static string? TryGetStringProperty(JsonElement element, string propertyName)
+    {
+        return element.ValueKind == JsonValueKind.Object
+            && element.TryGetProperty(propertyName, out var value)
+            && value.ValueKind == JsonValueKind.String
+                ? value.GetString()
+                : null;
+    }
+
+    private static string UnescapeJsonPointerSegment(string segment) =>
+        segment.Replace("~1", "/").Replace("~0", "~");
 
     private static string FirstNonEmpty(params string?[] values)
     {
