@@ -168,6 +168,22 @@ public class AgentFrameworkServiceStreamFailureTests
     }
 
     [TestMethod]
+    public void StreamErrorDetails_WhenPatchPathIsNotJsonPointer_IgnoresOperation()
+    {
+        const string rawPayload = """
+            [{"op":"add","path":"/error","value":{"code":"c","message":"m"}},{"op":"remove","path":"error"}]
+            """;
+
+        var details = AgentFrameworkService.CreateStreamErrorDetails(
+            message: null,
+            code: null,
+            rawPayload: rawPayload);
+
+        Assert.AreEqual("m", details.Message);
+        Assert.AreEqual("c", details.Code);
+    }
+
+    [TestMethod]
     public void StreamErrorDetails_WhenExplicitMessageAndCodeProvided_PreferThemOverPatchValues()
     {
         const string rawPayload = """

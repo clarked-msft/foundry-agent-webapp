@@ -705,6 +705,7 @@ public class AgentFrameworkService : IDisposable
             var path = TryGetStringProperty(operation, "path");
             JsonElement value = default;
             if (path is null
+                || (path.Length > 0 && path[0] != '/')
                 || !(op == "remove"
                     || ((op is "add" or "replace") && operation.TryGetProperty("value", out value))))
             {
