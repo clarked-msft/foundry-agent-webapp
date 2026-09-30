@@ -29,6 +29,9 @@
     "enableObo": {
       "value": "${ENABLE_OBO=false}"
     },
+    "oboTokenExchangeAudience": {
+      "value": "${OBO_TOKEN_EXCHANGE_AUDIENCE=api://AzureADTokenExchange}"
+    },
     "vnetInfrastructureSubnetId": {
       "value": "${VNET_INFRASTRUCTURE_SUBNET_ID=}"
     }
