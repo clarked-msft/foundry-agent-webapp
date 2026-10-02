@@ -4,36 +4,45 @@ namespace WebApp.Api.Services;
 
 internal static class ConversationUserFilter
 {
+    internal const string OwnerTenantMetadataKey = "ownerTenantId";
     internal const string OwnerMetadataKey = "ownerObjectId";
     private const string ObjectIdClaimType = "http://schemas.microsoft.com/identity/claims/objectidentifier";
+    private const string TenantIdClaimType = "http://schemas.microsoft.com/identity/claims/tenantid";
 
     internal static bool IsEnabled(IConfiguration configuration) =>
         configuration.GetValue<bool>("ENABLE_CONVERSATION_USER_FILTERING");
 
-    internal static string? GetUserObjectId(ClaimsPrincipal? user)
+    internal static EntraUserIdentity? GetUserIdentity(ClaimsPrincipal? user)
     {
-        var claimValue = user?.FindFirst("oid")?.Value
+        var objectIdClaim = user?.FindFirst("oid")?.Value
             ?? user?.FindFirst(ObjectIdClaimType)?.Value;
+        var tenantIdClaim = user?.FindFirst("tid")?.Value
+            ?? user?.FindFirst(TenantIdClaimType)?.Value;
 
-        return Guid.TryParseExact(claimValue, "D", out var objectId)
-            ? objectId.ToString("D")
+        return Guid.TryParseExact(objectIdClaim, "D", out var objectId)
+            && Guid.TryParseExact(tenantIdClaim, "D", out var tenantId)
+            ? new EntraUserIdentity(tenantId.ToString("D"), objectId.ToString("D"))
             : null;
     }
 
-    internal static string RequireUserObjectId(ClaimsPrincipal? user) =>
-        GetUserObjectId(user) ?? throw new ConversationAccessDeniedException();
+    internal static EntraUserIdentity RequireUserIdentity(ClaimsPrincipal? user) =>
+        GetUserIdentity(user) ?? throw new ConversationAccessDeniedException();
 
-    internal static bool IsOwnedByUser(IDictionary<string, string>? metadata, string? userObjectId) =>
-        !string.IsNullOrWhiteSpace(userObjectId)
-        && metadata?.TryGetValue(OwnerMetadataKey, out var ownerObjectId) == true
-        && string.Equals(ownerObjectId, userObjectId, StringComparison.Ordinal);
+    internal static bool IsOwnedByUser(IDictionary<string, string>? metadata, EntraUserIdentity? identity) =>
+        identity is { } userIdentity
+        && metadata?.TryGetValue(OwnerTenantMetadataKey, out var ownerTenantId) == true
+        && metadata.TryGetValue(OwnerMetadataKey, out var ownerObjectId)
+        && string.Equals(ownerTenantId, userIdentity.TenantId, StringComparison.Ordinal)
+        && string.Equals(ownerObjectId, userIdentity.ObjectId, StringComparison.Ordinal);
 
     internal static bool CanAccessConversation(
         IDictionary<string, string>? metadata,
-        string? userObjectId,
+        EntraUserIdentity? identity,
         bool filteringEnabled) =>
-        !filteringEnabled || IsOwnedByUser(metadata, userObjectId);
+        !filteringEnabled || IsOwnedByUser(metadata, identity);
 }
+
+internal readonly record struct EntraUserIdentity(string TenantId, string ObjectId);
 
 internal sealed class ConversationAccessDeniedException : Exception
 {

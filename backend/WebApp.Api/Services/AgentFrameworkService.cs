@@ -894,8 +894,9 @@ public class AgentFrameworkService : IDisposable
 
             if (_enableConversationUserFiltering)
             {
-                var userObjectId = ConversationUserFilter.RequireUserObjectId(_httpContextAccessor?.HttpContext?.User);
-                conversationOptions.Metadata[ConversationUserFilter.OwnerMetadataKey] = userObjectId;
+                var userIdentity = ConversationUserFilter.RequireUserIdentity(_httpContextAccessor?.HttpContext?.User);
+                conversationOptions.Metadata[ConversationUserFilter.OwnerTenantMetadataKey] = userIdentity.TenantId;
+                conversationOptions.Metadata[ConversationUserFilter.OwnerMetadataKey] = userIdentity.ObjectId;
             }
 
             if (!string.IsNullOrEmpty(firstMessage))
@@ -946,13 +947,13 @@ public class AgentFrameworkService : IDisposable
             // republished in Foundry (its "latest" version changes) even though they still exist.
             // Passing name-only scopes the list to the agent across all of its versions.
             var conversations = new List<ConversationSummary>();
-            var userObjectId = _enableConversationUserFiltering
-                ? ConversationUserFilter.GetUserObjectId(_httpContextAccessor?.HttpContext?.User)
+            var userIdentity = _enableConversationUserFiltering
+                ? ConversationUserFilter.GetUserIdentity(_httpContextAccessor?.HttpContext?.User)
                 : null;
 
-            if (_enableConversationUserFiltering && string.IsNullOrWhiteSpace(userObjectId))
+            if (_enableConversationUserFiltering && userIdentity is null)
             {
-                _logger.LogWarning("Cannot list conversations because the authenticated user has no Entra object ID");
+                _logger.LogWarning("Cannot list conversations because the authenticated user has no valid Entra identity");
                 return conversations;
             }
 
@@ -961,7 +962,7 @@ public class AgentFrameworkService : IDisposable
             await foreach (var conv in GetProjectClient().ProjectOpenAIClient.GetProjectConversationsClient().GetProjectConversationsAsync(
                 new AgentReference(_agentId), cancellationToken: cancellationToken))
             {
-                if (!ConversationUserFilter.CanAccessConversation(conv.Metadata, userObjectId, _enableConversationUserFiltering))
+                if (!ConversationUserFilter.CanAccessConversation(conv.Metadata, userIdentity, _enableConversationUserFiltering))
                 {
                     continue;
                 }
@@ -1056,15 +1057,15 @@ public class AgentFrameworkService : IDisposable
             return;
         }
 
-        var userObjectId = ConversationUserFilter.GetUserObjectId(_httpContextAccessor?.HttpContext?.User);
-        if (string.IsNullOrWhiteSpace(userObjectId))
+        var userIdentity = ConversationUserFilter.GetUserIdentity(_httpContextAccessor?.HttpContext?.User);
+        if (userIdentity is null)
         {
             throw new ConversationAccessDeniedException();
         }
 
         var conversation = await GetProjectClient().ProjectOpenAIClient.GetProjectConversationsClient()
             .GetProjectConversationAsync(conversationId, cancellationToken);
-        if (!ConversationUserFilter.IsOwnedByUser(conversation.Value.Metadata, userObjectId))
+        if (!ConversationUserFilter.IsOwnedByUser(conversation.Value.Metadata, userIdentity))
         {
             throw new ConversationAccessDeniedException();
         }

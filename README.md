@@ -424,7 +424,7 @@ This creates a backend API app registration with FIC, sets `api://{backendClient
 
 ### Prompt Agent conversation ownership filtering
 
-Set `ENABLE_CONVERSATION_USER_FILTERING=true` to associate new Prompt Agent conversations with the authenticated Entra user's `oid` claim and show or return only conversations whose `ownerObjectId` metadata matches that identity. The app checks ownership before returning conversation history and before streaming to an existing conversation. The setting is disabled by default, preserving the existing shared conversation behavior.
+Set `ENABLE_CONVERSATION_USER_FILTERING=true` to associate new Prompt Agent conversations with the authenticated Entra user's tenant ID (`tid`) and object ID (`oid`) claims, stored as `ownerTenantId` and `ownerObjectId` metadata. Conversation lists and access checks require both values to match. The app checks ownership before returning conversation history and before streaming to an existing conversation. The setting is disabled by default, preserving the existing shared conversation behavior.
 
 When enabled, requests without a valid Entra `oid` fail closed: new conversations are not created, the list is empty, and attempts to access a conversation return no conversation data. Existing conversations without matching owner metadata, including conversations created before enabling this setting, are hidden and inaccessible through these app endpoints.
 
