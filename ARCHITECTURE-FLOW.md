@@ -150,6 +150,11 @@ sequenceDiagram
             Service-->>Handler: StreamChunk.McpApproval
             Handler-->>Client: data: {type: mcpApprovalRequest}
             Note over Client: Stream pauses for user decision
+        else ItemDoneUpdate (OAuthConsentItem)
+            Service->>Service: Validate absolute HTTPS consent link
+            Service-->>Handler: StreamChunk.OAuthConsent
+            Handler-->>Client: data: {type: oauthConsentRequest}
+            Note over Client: User authorizes MCP connection,<br/>then resumes by previousResponseId
         else CompletedUpdate
             Service->>Service: Store _lastUsage
         else ErrorUpdate
@@ -176,6 +181,7 @@ Hosted Agent sessions are a separate state mechanism and are not covered by this
 | `chunk` | Per text delta | `{content: string}` |
 | `annotations` | After item complete | `{annotations: AnnotationInfo[]}` — each annotation may include `containerId` for container file citations |
 | `mcpApprovalRequest` | MCP tool needs approval | `{approvalRequest: {...}}` |
+| `oauthConsentRequest` | MCP connection needs per-user OAuth authorization | `{consentRequest: {id, consentLink, serverLabel, previousResponseId, continuationMessage}}` |
 | `toolUse` | When agent starts using a tool | `{toolName: string}` |
 | `usage` | Before done | `{duration, promptTokens, completionTokens, totalTokens}` |
 | `done` | Last, always | `{}` |
@@ -235,12 +241,14 @@ stateDiagram-v2
     streaming --> idle: CHAT_STREAM_COMPLETE
     streaming --> idle: CHAT_CANCEL_STREAM
     streaming --> idle: CHAT_MCP_APPROVAL_REQUEST
+    streaming --> idle: CHAT_OAUTH_CONSENT_REQUEST
     streaming --> error: CHAT_ERROR
     streaming --> error: CHAT_RECOVER_MESSAGE
 
     error --> idle: CHAT_CLEAR_ERROR
 
     idle --> idle: CHAT_MCP_APPROVAL_RESOLVED
+    idle --> idle: CHAT_OAUTH_CONSENT_RESOLVED
     idle --> idle: CHAT_CLEAR
 ```
 
@@ -336,9 +344,20 @@ sequenceDiagram
         Note over S: Resume via /api/chat/stream with mcpApproval
     end
 
+    alt MCP OAuth consent needed
+        API-->>S: data: {type: oauthConsentRequest}
+        S->>R: CHAT_OAUTH_CONSENT_REQUEST
+        Note over R: status: idle<br/>Show HTTPS authorization link<br/>Keep input disabled
+        U->>UI: Authorize access in new tab
+        U->>UI: I've authorized
+        UI->>R: CHAT_OAUTH_CONSENT_RESOLVED
+        UI->>S: continueAfterOAuthConsent(prevResponseId, message, convId)
+        Note over S: Resume via /api/chat/stream<br/>with previousResponseId
+    end
+
     API-->>S: data: {type: usage}
     S->>R: CHAT_STREAM_COMPLETE
-    Note over R: status: idle<br/>Input enabled
+    Note over R: status: idle<br/>Input enabled unless user action is pending
 
     API-->>S: data: {type: done}
     Note over S: Exits stream reader
@@ -376,7 +395,23 @@ stateDiagram-v2
 
 ---
 
-### 2.5 Error Recovery Flow
+### 2.5 MCP OAuth Consent Flow
+
+```mermaid
+stateDiagram-v2
+    [*] --> streaming: Normal streaming
+    streaming --> awaiting_consent: CHAT_OAUTH_CONSENT_REQUEST
+    awaiting_consent --> awaiting_consent: Open HTTPS consent link
+    awaiting_consent --> sending: User confirms authorization
+    awaiting_consent --> idle: User selects Not now
+    sending --> streaming: Resume with previousResponseId
+```
+
+The consent link is supplied by Foundry for the configured MCP project connection. The backend only forwards absolute HTTPS URLs without embedded credentials. Authorization occurs out of band; the app does not receive OAuth tokens. After authorization, it resubmits the original message using the incomplete response ID so Foundry can retry the MCP call with the user's stored credential.
+
+---
+
+### 2.6 Error Recovery Flow
 
 ```mermaid
 stateDiagram-v2
@@ -455,7 +490,9 @@ flowchart LR
 | `CHAT_STREAM_ANNOTATIONS` | streaming | streaming | Add citations to msg |
 | `CHAT_MCP_APPROVAL_REQUEST` | streaming | idle | Add approval message, keep input disabled |
 | `CHAT_MCP_APPROVAL_RESOLVED` | idle | idle | Mark approval as approved/rejected |
-| `CHAT_STREAM_COMPLETE` | streaming | idle | Add usage, enable input |
+| `CHAT_OAUTH_CONSENT_REQUEST` | streaming | idle | Add consent message, keep input disabled |
+| `CHAT_OAUTH_CONSENT_RESOLVED` | idle | idle | Mark consent continued/dismissed |
+| `CHAT_STREAM_COMPLETE` | streaming | idle | Add usage; enable input only when no user action is pending |
 | `CHAT_CANCEL_STREAM` | streaming | idle | Enable input |
 | `CHAT_STREAM_RETRY` | streaming | streaming | Reset assistant msg content, show retry indicator |
 | `CHAT_RECOVER_MESSAGE` | streaming | error | Remove failed msgs, restore input text, show error |
@@ -489,6 +526,7 @@ The `ChatService` translates backend SSE events into reducer actions:
 | `chunk` | `CHAT_STREAM_CHUNK` | Extract `content` field |
 | `annotations` | `CHAT_STREAM_ANNOTATIONS` | Map `AnnotationInfo[]` to `IAnnotation[]` |
 | `mcpApprovalRequest` | `CHAT_MCP_APPROVAL_REQUEST` | Create approval message with `role: 'approval'` |
+| `oauthConsentRequest` | `CHAT_OAUTH_CONSENT_REQUEST` | Create consent message with `role: 'oauth-consent'` |
 | `usage` | `CHAT_STREAM_COMPLETE` | Extract token counts and duration |
 | `done` | No action — exits stream reader | `usage` is the sole trigger for CHAT_STREAM_COMPLETE |
 | `toolUse` | `CHAT_STREAM_TOOL_USE` | `{toolName}` → `{messageId, toolName}` |
@@ -675,8 +713,8 @@ The `.env` file is auto-generated by `postprovision.ps1` during `azd up` (after 
 |------|---------|
 | [backend/WebApp.Api/Program.cs](backend/WebApp.Api/Program.cs) | Request pipeline, JWT validation, SSE endpoints |
 | [backend/WebApp.Api/Services/AgentFrameworkService.cs](backend/WebApp.Api/Services/AgentFrameworkService.cs) | Agent loading, streaming, credential management |
-| [backend/WebApp.Api/Models/StreamChunk.cs](backend/WebApp.Api/Models/StreamChunk.cs) | SSE chunk types (text, annotations, MCP) |
-| [backend/WebApp.Api/Models/ChatRequest.cs](backend/WebApp.Api/Models/ChatRequest.cs) | Request payload with attachments |
+| [backend/WebApp.Api/Models/StreamChunk.cs](backend/WebApp.Api/Models/StreamChunk.cs) | SSE chunk types (text, annotations, MCP approval, OAuth consent) |
+| [backend/WebApp.Api/Models/ChatRequest.cs](backend/WebApp.Api/Models/ChatRequest.cs) | Request payload with attachments and continuation state |
 
 ### Frontend
 
@@ -686,3 +724,4 @@ The `.env` file is auto-generated by `postprovision.ps1` during `azd up` (after 
 | [frontend/src/reducers/appReducer.ts](frontend/src/reducers/appReducer.ts) | Pure reducer with all transitions |
 | [frontend/src/contexts/AppContext.tsx](frontend/src/contexts/AppContext.tsx) | Provider with MSAL integration |
 | [frontend/src/services/chatService.ts](frontend/src/services/chatService.ts) | SSE client dispatching actions |
+| [frontend/src/components/chat/OAuthConsentCard.tsx](frontend/src/components/chat/OAuthConsentCard.tsx) | Per-user MCP OAuth authorization and continuation UI |

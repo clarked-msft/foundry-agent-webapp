@@ -183,5 +183,70 @@ describe('ChatService', () => {
 
       expect(streamedChunks).toEqual(['|---', '|---', '|---', '|---|\n']);
     });
+
+    it('dispatches OAuth consent requests from the stream', async () => {
+      const streamContent = [
+        'data: {"type":"conversationId","conversationId":"conv-1"}\n\n',
+        'data: {"type":"oauthConsentRequest","consentRequest":{"id":"oauthreq-1","consentLink":"https://example.com/consent","serverLabel":"Orders","previousResponseId":"resp-1","continuationMessage":"Check my orders"}}\n\n',
+        'data: {"type":"done"}\n\n',
+      ].join('');
+      const encodedContent = new TextEncoder().encode(streamContent);
+      const reader = {
+        read: vi.fn()
+          .mockResolvedValueOnce({ done: false, value: encodedContent })
+          .mockResolvedValueOnce({ done: true, value: undefined }),
+        releaseLock: vi.fn(),
+      };
+
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+        ok: true,
+        body: {
+          getReader: () => reader,
+        },
+      }));
+
+      await chatService.sendMessage('Check my orders', null);
+
+      expect(mockDispatch).toHaveBeenCalledWith(expect.objectContaining({
+        type: 'CHAT_OAUTH_CONSENT_REQUEST',
+        consentRequest: expect.objectContaining({
+          id: 'oauthreq-1',
+          serverLabel: 'Orders',
+        }),
+      }));
+    });
+  });
+
+  describe('continueAfterOAuthConsent', () => {
+    it('resumes with the previous response ID and continuation flag', async () => {
+      const encodedContent = new TextEncoder().encode('data: {"type":"done"}\n\n');
+      const reader = {
+        read: vi.fn()
+          .mockResolvedValueOnce({ done: false, value: encodedContent })
+          .mockResolvedValueOnce({ done: true, value: undefined }),
+        releaseLock: vi.fn(),
+      };
+      const fetchMock = vi.fn().mockResolvedValue({
+        ok: true,
+        body: {
+          getReader: () => reader,
+        },
+      });
+      vi.stubGlobal('fetch', fetchMock);
+
+      await chatService.continueAfterOAuthConsent(
+        'resp-123',
+        'Check my orders',
+        'conv-123'
+      );
+
+      const [, request] = fetchMock.mock.calls[0];
+      expect(JSON.parse(request.body)).toEqual(expect.objectContaining({
+        message: 'Check my orders',
+        conversationId: 'conv-123',
+        previousResponseId: 'resp-123',
+        continueAfterOAuthConsent: true,
+      }));
+    });
   });
 });

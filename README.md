@@ -345,7 +345,7 @@ By default, `azd up` configures everything automatically:
 | Frontend → Backend | User's Entra ID token (MSAL.js PKCE) | SPA app registration created by Bicep |
 | Backend → Agent Service | Container App's managed identity | User-assigned MI + RBAC (see [Azure Resources](#azure-resources-provisioned)) |
 
-The managed identity has `Cognitive Services OpenAI Contributor` + `Azure AI Developer` roles on the AI Foundry resource. All agent tool calls (MCP, OpenAPI, Logic Apps) use the **agent's own identity** configured in the Foundry portal — NOT the web app's identity and NOT the user's identity.
+The managed identity has `Cognitive Services OpenAI Contributor` + `Azure AI Developer` roles on the AI Foundry resource. Agent tool authentication is configured separately in Foundry. Depending on the project connection, a tool can use the agent identity, project managed identity, shared credentials, or per-user OAuth identity passthrough. The web app's identity is not automatically forwarded to tools.
 
 **Scope requested by `AIProjectClient`**: `https://ai.azure.com/.default`
 
@@ -353,7 +353,7 @@ The managed identity has `Cognitive Services OpenAI Contributor` + `Azure AI Dev
 
 OBO replaces the managed identity with the **user's own identity** for Agent Service API calls. This gives you per-user audit trails and rate limiting but adds enterprise friction.
 
-> **⚠️ Important**: OBO does NOT pass the user's identity to agent tools. Tool authentication (MCP servers, OpenAPI endpoints, Logic Apps) is controlled by the [Agent Identity](https://learn.microsoft.com/azure/ai-foundry/agents/concepts/agent-identity) configured in the Foundry portal. OBO only affects who the Agent Service API sees as the caller.
+> **⚠️ Important**: Web-app OBO does NOT automatically pass the user's identity to agent tools. It only affects who the Agent Service API sees as the caller. Tool authentication is configured independently on the Foundry project connection. An MCP connection configured for OAuth identity passthrough has its own per-user authorization flow.
 
 #### How OBO Works (Secretless via Federated Identity Credential)
 
@@ -420,9 +420,15 @@ This creates a backend API app registration with FIC, sets `api://{backendClient
 | Gotcha | Detail |
 |--------|--------|
 | **Wrong consent target** | Portal shows "Microsoft Cognitive Services" (`cognitiveservices.azure.com`, appId `7d312290-...`) — this is NOT correct. `AIProjectClient` uses `ai.azure.com/.default` → **Azure Machine Learning Services** (appId `18a66f5f-...`). Consenting to wrong one gives green checkmark but runtime `AADSTS65001`. |
-| **Tool identity is separate** | OBO only affects the Agent Service API caller. Agent tools (MCP, OpenAPI, Logic Apps) use the agent's identity from Foundry portal. Configure [Agent Identity](https://learn.microsoft.com/azure/ai-foundry/agents/concepts/agent-identity) separately for per-user tool access. |
+| **Tool authentication is separate** | Web-app OBO only affects the Agent Service API caller. Configure each tool connection independently with agent identity, project managed identity, shared credentials, or OAuth identity passthrough. |
 | **Conversation ownership filtering** | Disabled by default; optionally filter Prompt Agent conversations in the app using `ENABLE_CONVERSATION_USER_FILTERING=true` (details below). |
 | **Local dev uses CLI credentials** | OBO requires a managed identity for FIC. Locally, the app uses `az login` credentials regardless of `ENTRA_BACKEND_CLIENT_ID`. |
+
+#### MCP OAuth Identity Passthrough
+
+For an MCP project connection configured with OAuth identity passthrough, Foundry returns an `oauth_consent_request` the first time a user needs access. The web app displays Foundry's HTTPS authorization link and, after the user authorizes the connection, resumes the incomplete response using its previous response ID.
+
+This authorization is separate from consent granted to the web app's backend registration for Agent Service OBO. The OAuth client is either the provider-managed application selected by the MCP connection or the custom client application registration whose client ID is configured on that connection. Tenant-wide admin consent can remove the interactive permission prompt, but each user must still complete the authorization link once so Foundry can establish and store that user's MCP credential.
 
 ### Prompt Agent conversation ownership filtering
 

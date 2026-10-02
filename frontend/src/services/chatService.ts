@@ -426,6 +426,16 @@ export class ChatService {
               }
               break;
 
+            case 'oauthConsentRequest':
+              if (event.data.consentRequest) {
+                this.dispatch({
+                  type: 'CHAT_OAUTH_CONSENT_REQUEST',
+                  messageId,
+                  consentRequest: event.data.consentRequest,
+                });
+              }
+              break;
+
             case 'usage':
               this.dispatch({
                 type: 'CHAT_STREAM_COMPLETE',
@@ -540,6 +550,69 @@ export class ChatService {
       }
 
       trackException(error instanceof Error ? error : new Error(String(error)), { context: 'sendMcpApproval' });
+
+      const appError: AppError = isAppError(error)
+        ? error
+        : createAppError(error, getErrorCodeFromMessage(error));
+
+      this.dispatch({ type: 'CHAT_ERROR', error: appError });
+      throw error;
+    }
+  }
+
+  /**
+   * Continue an incomplete response after the user completes OAuth consent for an MCP connection.
+   */
+  async continueAfterOAuthConsent(
+    previousResponseId: string,
+    continuationMessage: string,
+    conversationId: string
+  ): Promise<void> {
+    try {
+      const token = await this.ensureAuthToken();
+
+      const assistantMessageId = Date.now().toString();
+      this.dispatch({ type: 'CHAT_ADD_ASSISTANT_MESSAGE', messageId: assistantMessageId });
+      this.dispatch({
+        type: 'CHAT_START_STREAM',
+        conversationId,
+        messageId: assistantMessageId,
+      });
+
+      this.currentStreamAbort = new AbortController();
+      this.streamCancelled = false;
+
+      const response = await retryWithBackoff(
+        async () =>
+          this.initiateStream(
+            `${this.apiUrl}/chat/stream`,
+            token,
+            {
+              message: continuationMessage,
+              conversationId,
+              previousResponseId,
+              continueAfterOAuthConsent: true,
+            },
+            this.currentStreamAbort!.signal
+          ),
+        3,
+        1000
+      );
+
+      await this.processStream(response, assistantMessageId, conversationId);
+      this.currentStreamAbort = undefined;
+      this.streamCancelled = false;
+    } catch (error) {
+      this.currentStreamAbort = undefined;
+      this.streamCancelled = false;
+
+      if (error instanceof DOMException && error.name === 'AbortError') {
+        return;
+      }
+
+      trackException(error instanceof Error ? error : new Error(String(error)), {
+        context: 'continueAfterOAuthConsent',
+      });
 
       const appError: AppError = isAppError(error)
         ? error

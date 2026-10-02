@@ -22,6 +22,11 @@ public record ChatRequest
     /// Response ID to continue from (for MCP approval flow).
     /// </summary>
     public string? PreviousResponseId { get; init; }
+    /// <summary>
+    /// Indicates that the request should resume an incomplete response after the user completed
+    /// OAuth consent for an MCP connection.
+    /// </summary>
+    public bool ContinueAfterOAuthConsent { get; init; }
 }
 
 /// <summary>

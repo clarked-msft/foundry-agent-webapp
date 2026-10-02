@@ -241,6 +241,46 @@ export const appReducer = (state: AppState, action: AppAction): AppState => {
       };
     }
 
+    case 'CHAT_OAUTH_CONSENT_REQUEST': {
+      const consentMessage = {
+        id: `oauth-consent-${action.messageId}`,
+        role: 'oauth-consent' as const,
+        content: '',
+        oauthConsent: action.consentRequest,
+      };
+
+      return {
+        ...state,
+        chat: {
+          ...state.chat,
+          messages: [...state.chat.messages, consentMessage],
+          status: 'idle',
+        },
+        ui: {
+          ...state.ui,
+          chatInputEnabled: false,
+        },
+      };
+    }
+
+    case 'CHAT_OAUTH_CONSENT_RESOLVED': {
+      return {
+        ...state,
+        chat: {
+          ...state.chat,
+          messages: state.chat.messages.map(msg =>
+            msg.role === 'oauth-consent' && msg.oauthConsent?.id === action.consentRequestId
+              ? { ...msg, oauthConsent: { ...msg.oauthConsent, resolved: action.resolved } }
+              : msg
+          ),
+        },
+        ui: {
+          ...state.ui,
+          chatInputEnabled: action.resolved === 'dismissed',
+        },
+      };
+    }
+
     case 'CHAT_STREAM_COMPLETE': {
       // Update the completed message with usage info and clean up retry/tool state
       const updatedMessages = state.chat.messages.map(msg =>
@@ -269,7 +309,10 @@ export const appReducer = (state: AppState, action: AppAction): AppState => {
         },
         ui: {
           ...state.ui,
-          chatInputEnabled: true,
+          chatInputEnabled: !state.chat.messages.some(message =>
+            (message.role === 'approval' && !message.mcpApproval?.resolved)
+            || (message.role === 'oauth-consent' && !message.oauthConsent?.resolved)
+          ),
         },
       };
     }

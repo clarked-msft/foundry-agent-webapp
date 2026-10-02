@@ -208,6 +208,7 @@ app.MapPost("/api/chat/stream", async (
             request.FileDataUris,
             request.PreviousResponseId,
             request.McpApproval,
+            request.ContinueAfterOAuthConsent,
             cancellationToken))
         {
             if (chunk.IsText && chunk.TextDelta != null)
@@ -221,6 +222,10 @@ app.MapPost("/api/chat/stream", async (
             else if (chunk.IsMcpApprovalRequest && chunk.McpApprovalRequest != null)
             {
                 await WriteMcpApprovalRequestEvent(httpContext.Response, chunk.McpApprovalRequest, cancellationToken);
+            }
+            else if (chunk.IsOAuthConsentRequest && chunk.OAuthConsentRequest != null)
+            {
+                await WriteOAuthConsentRequestEvent(httpContext.Response, chunk.OAuthConsentRequest, cancellationToken);
             }
             else if (chunk.IsToolUse && chunk.ToolName != null)
             {
@@ -334,6 +339,24 @@ static async Task WriteMcpApprovalRequestEvent(HttpResponse response, WebApp.Api
             serverLabel = approval.ServerLabel,
             arguments = approval.Arguments,
             previousResponseId = approval.PreviousResponseId
+        }
+    });
+    await response.WriteAsync($"data: {json}\n\n", ct);
+    await response.Body.FlushAsync(ct);
+}
+
+static async Task WriteOAuthConsentRequestEvent(HttpResponse response, WebApp.Api.Models.OAuthConsentRequest consent, CancellationToken ct)
+{
+    var json = System.Text.Json.JsonSerializer.Serialize(new
+    {
+        type = "oauthConsentRequest",
+        consentRequest = new
+        {
+            id = consent.Id,
+            consentLink = consent.ConsentLink,
+            serverLabel = consent.ServerLabel,
+            previousResponseId = consent.PreviousResponseId,
+            continuationMessage = consent.ContinuationMessage
         }
     });
     await response.WriteAsync($"data: {json}\n\n", ct);

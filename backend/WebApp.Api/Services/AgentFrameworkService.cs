@@ -347,11 +347,13 @@ public class AgentFrameworkService : IDisposable
 
     /// <summary>
     /// Streams agent response for a message using ProjectResponsesClient (Responses API).
-    /// Returns StreamChunk objects containing text deltas, annotations, or MCP approval requests.
+    /// Returns StreamChunk objects containing text deltas, annotations, MCP approval requests,
+    /// or MCP OAuth consent requests.
     /// </summary>
     /// <remarks>
     /// Uses direct ProjectResponsesClient instead of IChatClient because we need access to:
     /// - McpToolCallApprovalRequestItem for MCP approval flows
+    /// - OAuthConsentRequestResponseItem for MCP OAuth identity passthrough
     /// - FileSearchCallResponseItem for file search quotes  
     /// - MessageResponseItem.OutputTextAnnotations for citations
     /// The IChatClient abstraction doesn't expose these specialized response types.
@@ -363,6 +365,7 @@ public class AgentFrameworkService : IDisposable
         List<FileAttachment>? fileDataUris = null,
         string? previousResponseId = null,
         McpApprovalResponse? mcpApproval = null,
+        bool continueAfterOAuthConsent = false,
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
@@ -370,11 +373,12 @@ public class AgentFrameworkService : IDisposable
         await EnsureConversationAccessAsync(conversationId, cancellationToken);
 
         _logger.LogInformation(
-            "Streaming message to conversation: {ConversationId}, ImageCount: {ImageCount}, FileCount: {FileCount}, HasApproval: {HasApproval}",
+            "Streaming message to conversation: {ConversationId}, ImageCount: {ImageCount}, FileCount: {FileCount}, HasApproval: {HasApproval}, ContinuesOAuthConsent: {ContinuesOAuthConsent}",
             conversationId,
             imageDataUris?.Count ?? 0,
             fileDataUris?.Count ?? 0,
-            mcpApproval != null);
+            mcpApproval != null,
+            continueAfterOAuthConsent);
 
         CreateResponseOptions options = new() { StreamingEnabled = true };
 
@@ -382,16 +386,43 @@ public class AgentFrameworkService : IDisposable
         var resolvedAgent = await GetAgentAsync(cancellationToken);
         var resolvedVersion = _configuredAgentVersion ?? resolvedAgent.Version;
 
-        // Always bind to conversation — the conversation maintains MCP approval state
-        ProjectResponsesClient responsesClient
-            = GetProjectClient().ProjectOpenAIClient.GetProjectResponsesClientForAgent(
+        if (continueAfterOAuthConsent && string.IsNullOrWhiteSpace(previousResponseId))
+        {
+            throw new ArgumentException(
+                "A previous response ID is required to continue after OAuth consent.",
+                nameof(previousResponseId));
+        }
+
+        // OAuth consent resumes by previous response ID. Other requests remain bound to the
+        // project conversation so MCP approval state and conversation history stay server-managed.
+        ProjectResponsesClient responsesClient = continueAfterOAuthConsent
+            ? GetProjectClient().ProjectOpenAIClient.GetProjectResponsesClientForAgent(
+                new AgentReference(_agentId, resolvedVersion))
+            : GetProjectClient().ProjectOpenAIClient.GetProjectResponsesClientForAgent(
                 new AgentReference(_agentId, resolvedVersion),
                 conversationId);
 
+        if (continueAfterOAuthConsent)
+        {
+            if (string.IsNullOrWhiteSpace(message))
+            {
+                throw new ArgumentException(
+                    "The original message is required to continue after OAuth consent.",
+                    nameof(message));
+            }
+
+            options.PreviousResponseId = previousResponseId;
+            options.InputItems.Add(
+                await BuildUserMessageAsync(message, imageDataUris, fileDataUris, cancellationToken));
+
+            _logger.LogInformation(
+                "Resuming response after OAuth consent: PreviousResponseId={PreviousResponseId}",
+                previousResponseId);
+        }
         // If continuing from MCP approval, add approval response items
         // Don't set PreviousResponseId — the API rejects it with conversation binding,
         // and the conversation already tracks the pending MCP state
-        if (!string.IsNullOrEmpty(previousResponseId) && mcpApproval != null)
+        else if (!string.IsNullOrEmpty(previousResponseId) && mcpApproval != null)
         {
             options.InputItems.Add(ResponseItem.CreateMcpApprovalResponseItem(
                 mcpApproval.ApprovalRequestId,
@@ -443,6 +474,39 @@ public class AgentFrameworkService : IDisposable
             }
             else if (update is StreamingResponseOutputItemDoneUpdate itemDoneUpdate)
             {
+                if (itemDoneUpdate.Item.AsAgentResponseItem() is OAuthConsentRequestResponseItem consentItem)
+                {
+                    string consentLink = consentItem.ConsentLink.ToString();
+                    if (!IsSafeOAuthConsentLink(consentLink))
+                    {
+                        _logger.LogError(
+                            "Rejected unsafe OAuth consent link for MCP server {ServerLabel}",
+                            consentItem.ServerLabel);
+                        throw new InvalidOperationException("The MCP server returned an invalid OAuth consent link.");
+                    }
+
+                    if (string.IsNullOrWhiteSpace(currentResponseId))
+                    {
+                        throw new InvalidOperationException(
+                            "The MCP server requested OAuth consent without a response ID.");
+                    }
+
+                    _logger.LogInformation(
+                        "OAuth consent requested: Id={Id}, Server={Server}",
+                        consentItem.Id,
+                        consentItem.ServerLabel);
+
+                    yield return StreamChunk.OAuthConsent(new OAuthConsentRequest
+                    {
+                        Id = consentItem.Id,
+                        ConsentLink = consentLink,
+                        ServerLabel = consentItem.ServerLabel,
+                        PreviousResponseId = currentResponseId,
+                        ContinuationMessage = message
+                    });
+                    continue;
+                }
+
                 // Check for MCP tool approval request
                 if (itemDoneUpdate.Item is McpToolCallApprovalRequestItem mcpApprovalItem)
                 {
@@ -480,6 +544,7 @@ public class AgentFrameworkService : IDisposable
                                 result.Text.Length);
                         }
                     }
+
                     continue;
                 }
                 
@@ -570,6 +635,20 @@ public class AgentFrameworkService : IDisposable
         }
 
         _logger.LogInformation("Completed streaming for conversation: {ConversationId}", conversationId);
+    }
+
+    internal static bool IsSafeOAuthConsentLink(string? consentLink)
+    {
+        if (string.IsNullOrWhiteSpace(consentLink)
+            || consentLink.Any(char.IsControl)
+            || !Uri.TryCreate(consentLink, UriKind.Absolute, out var uri))
+        {
+            return false;
+        }
+
+        return string.Equals(uri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase)
+            && !string.IsNullOrWhiteSpace(uri.Host)
+            && string.IsNullOrEmpty(uri.UserInfo);
     }
 
     internal sealed record StreamFailureDetails(string Message, string? Code, string? RawPayload);

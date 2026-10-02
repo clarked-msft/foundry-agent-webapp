@@ -1,9 +1,9 @@
 import type { AccountInfo } from '@azure/msal-browser';
-import type { IChatItem, IUsageInfo, IAnnotation, IMcpApprovalRequest, IFileAttachment } from './chat';
+import type { IChatItem, IUsageInfo, IAnnotation, IMcpApprovalRequest, IOAuthConsentRequest, IFileAttachment } from './chat';
 import type { AppError } from './errors';
 
 // Re-export types for convenience
-export type { IChatItem, IUsageInfo, IAnnotation, IMcpApprovalRequest, IFileAttachment };
+export type { IChatItem, IUsageInfo, IAnnotation, IMcpApprovalRequest, IOAuthConsentRequest, IFileAttachment };
 
 export interface ConversationSummary {
   id: string;
@@ -76,6 +76,8 @@ export type AppAction =
   | { type: 'CHAT_STREAM_TOOL_USE'; messageId: string; toolName: string }
   | { type: 'CHAT_MCP_APPROVAL_REQUEST'; messageId: string; approvalRequest: IMcpApprovalRequest; previousResponseId: string | null }
   | { type: 'CHAT_MCP_APPROVAL_RESOLVED'; approvalRequestId: string; resolved?: 'approved' | 'rejected' }
+  | { type: 'CHAT_OAUTH_CONSENT_REQUEST'; messageId: string; consentRequest: IOAuthConsentRequest }
+  | { type: 'CHAT_OAUTH_CONSENT_RESOLVED'; consentRequestId: string; resolved?: 'continued' | 'dismissed' }
   | { type: 'CHAT_STREAM_COMPLETE'; usage: IUsageInfo }
   | { type: 'CHAT_CANCEL_STREAM' }
   | { type: 'CHAT_ERROR'; error: AppError } // Enhanced error object

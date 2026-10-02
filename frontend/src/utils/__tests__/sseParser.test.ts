@@ -65,6 +65,16 @@ describe('parseSseLine', () => {
       expect(result?.data.arguments).toBe('{"path":"/test"}');
       expect(result?.data.previousResponseId).toBe('resp-456');
     });
+
+    it('parses an oauthConsentRequest event', () => {
+      const line = 'data: {"type":"oauthConsentRequest","consentRequest":{"id":"oauthreq-123","consentLink":"https://example.com/consent","serverLabel":"Orders","previousResponseId":"resp-456","continuationMessage":"Check my orders"}}';
+      const result = parseSseLine(line);
+
+      expect(result?.type).toBe('oauthConsentRequest');
+      expect(result?.data.consentRequest.consentLink).toBe('https://example.com/consent');
+      expect(result?.data.consentRequest.serverLabel).toBe('Orders');
+      expect(result?.data.consentRequest.previousResponseId).toBe('resp-456');
+    });
   });
 
   describe('invalid SSE lines', () => {

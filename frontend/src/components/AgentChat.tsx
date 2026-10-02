@@ -130,6 +130,40 @@ export const AgentChat: React.FC<AgentChatProps> = ({ agentName, agentDescriptio
     }
   };
 
+  const handleOAuthConsentContinue = async (
+    consentRequestId: string,
+    previousResponseId: string,
+    continuationMessage: string,
+    conversationId: string
+  ) => {
+    dispatch({
+      type: 'CHAT_OAUTH_CONSENT_RESOLVED',
+      consentRequestId,
+      resolved: 'continued',
+    });
+    try {
+      await chatService.continueAfterOAuthConsent(
+        previousResponseId,
+        continuationMessage,
+        conversationId
+      );
+    } catch {
+      dispatch({
+        type: 'CHAT_OAUTH_CONSENT_RESOLVED',
+        consentRequestId,
+        resolved: undefined,
+      });
+    }
+  };
+
+  const handleOAuthConsentDismiss = (consentRequestId: string) => {
+    dispatch({
+      type: 'CHAT_OAUTH_CONSENT_RESOLVED',
+      consentRequestId,
+      resolved: 'dismissed',
+    });
+  };
+
   const handleExportConversation = useCallback(() => {
     const md = exportAsMarkdown(chat.messages, agentName);
     downloadMarkdown(md);
@@ -224,6 +258,8 @@ export const AgentChat: React.FC<AgentChatProps> = ({ agentName, agentDescriptio
           onNewChat={handleNewChat}
           onCancelStream={handleCancelStream}
           onMcpApproval={handleMcpApproval}
+          onOAuthConsentContinue={handleOAuthConsentContinue}
+          onOAuthConsentDismiss={handleOAuthConsentDismiss}
           onToggleSidebar={handleToggleSidebar}
           onExportConversation={handleExportConversation}
           onRegenerate={handleRegenerate}
