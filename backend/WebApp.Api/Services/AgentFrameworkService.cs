@@ -8,11 +8,13 @@ using OpenAI.Responses;
 using Microsoft.Identity.Client;
 using Microsoft.Identity.Web;
 using System.Runtime.CompilerServices;
+using System.Text.Json;
 using WebApp.Api.Models;
 
 namespace WebApp.Api.Services;
 
 #pragma warning disable OPENAI001
+#pragma warning disable SCME0001
 
 /// <summary>
 /// Foundry Agent Service using v2 Agents API.
@@ -25,6 +27,7 @@ namespace WebApp.Api.Services;
 public class AgentFrameworkService : IDisposable
 {
     internal const string DefaultAiAuthScope = "https://ai.azure.com/.default";
+    internal const string DefaultOboTokenExchangeAudience = "api://AzureADTokenExchange";
 
     private readonly string _agentEndpoint;
     private readonly string _agentId;
@@ -43,6 +46,7 @@ public class AgentFrameworkService : IDisposable
     private readonly string? _tenantId;
     private readonly string? _managedIdentityClientId;
     private readonly bool _enableConversationUserFiltering;
+    private readonly string _oboTokenExchangeAudience;
     // Foundry auth scope precedence:
     // 1) AI_AUTH_SCOPE (canonical)
     // 2) AI_SCOPE (legacy fallback)
@@ -101,6 +105,7 @@ public class AgentFrameworkService : IDisposable
         _enableConversationUserFiltering = ConversationUserFilter.IsEnabled(configuration);
         _tenantId = configuration["ENTRA_TENANT_ID"] ?? configuration["AzureAd:TenantId"];
         _aiScope = ResolveAiAuthScope(configuration);
+        _oboTokenExchangeAudience = ResolveOboTokenExchangeAudience(configuration);
         // User-assigned MI client ID — used for MI-only mode and as FIC assertion in OBO mode
         _managedIdentityClientId = configuration["MANAGED_IDENTITY_CLIENT_ID"]
             ?? configuration["OBO_MANAGED_IDENTITY_CLIENT_ID"]; // backward compat
@@ -140,11 +145,16 @@ public class AgentFrameworkService : IDisposable
                     "OBO mode requires MANAGED_IDENTITY_CLIENT_ID to be set for the FIC assertion. " +
                     "This is the user-assigned managed identity that acts as the federated credential.");
             }
-            _logger.LogInformation("OBO mode enabled: backendClientId={BackendClientId}. All API calls use user-delegated identity.", _backendClientId);
+            _logger.LogInformation(
+                "OBO mode enabled: backendClientId={BackendClientId}, tokenExchangeAudience={TokenExchangeAudience}. All API calls use user-delegated identity.",
+                _backendClientId,
+                _oboTokenExchangeAudience);
 
             // Initialize MI assertion eagerly — avoids thread-safety issues with lazy init
             // in CreateOboCredential(). Safe here because the constructor runs once per scoped instance.
-            s_miAssertion ??= new ManagedIdentityClientAssertion(managedIdentityClientId: _managedIdentityClientId);
+            s_miAssertion ??= new ManagedIdentityClientAssertion(
+                managedIdentityClientId: _managedIdentityClientId,
+                tokenExchangeUrl: _oboTokenExchangeAudience);
 
             // No cached project client in OBO mode — created per-request with user's token
         }
@@ -221,6 +231,14 @@ public class AgentFrameworkService : IDisposable
         }
 
         return DefaultAiAuthScope;
+    }
+
+    internal static string ResolveOboTokenExchangeAudience(IConfiguration configuration)
+    {
+        var configuredAudience = configuration["OBO_TOKEN_EXCHANGE_AUDIENCE"];
+        return string.IsNullOrWhiteSpace(configuredAudience)
+            ? DefaultOboTokenExchangeAudience
+            : configuredAudience.Trim();
     }
 
     private AIProjectClient CreateProjectClient(TokenCredential credential)
@@ -507,18 +525,238 @@ public class AgentFrameworkService : IDisposable
             {
                 _lastUsage = completedUpdate.Response.Usage;
             }
+            else if (update is StreamingResponseFailedUpdate failedUpdate)
+            {
+                var failure = CreateResponseFailedDetails(
+                    failedUpdate.Response?.Error?.Message,
+                    failedUpdate.Response?.Error?.Code.ToString(),
+                    TryExtractRawPayload(failedUpdate.Patch, _logger));
+
+                _logger.LogError(
+                    "Stream response failed: Message={Message}, Code={Code}, Raw={RawError}",
+                    failedUpdate.Response?.Error?.Message,
+                    failedUpdate.Response?.Error?.Code.ToString(),
+                    failure.RawPayload);
+
+                throw new InvalidOperationException($"Stream failed: {failure.Message}");
+            }
             else if (update is StreamingResponseErrorUpdate errorUpdate)
             {
-                _logger.LogError("Stream error: {Error}", errorUpdate.Message);
-                throw new InvalidOperationException($"Stream error: {errorUpdate.Message}");
+                var failure = CreateStreamErrorDetails(
+                    errorUpdate.Message,
+                    errorUpdate.Code,
+                    TryExtractRawPayload(errorUpdate.Patch, _logger));
+
+                _logger.LogError(
+                    "Stream error: Message={Message}, Code={Code}, Raw={RawError}",
+                    errorUpdate.Message,
+                    errorUpdate.Code,
+                    failure.RawPayload);
+
+                throw new InvalidOperationException($"Stream error: {failure.Message}");
+            }
+            else if (ClassifyUnhandledStreamUpdate(update) == StreamUpdateHandling.ExpectedLifecycle)
+            {
+                _logger.LogTrace(
+                    "Ignoring expected stream lifecycle update: {Type}",
+                    update.GetType().Name);
             }
             else
             {
-                _logger.LogDebug("Unhandled stream update type: {Type}", update.GetType().Name);
+                _logger.LogWarning(
+                    "Unknown stream update type: {Type}",
+                    update.GetType().FullName);
             }
         }
 
         _logger.LogInformation("Completed streaming for conversation: {ConversationId}", conversationId);
+    }
+
+    internal sealed record StreamFailureDetails(string Message, string? Code, string? RawPayload);
+
+    internal enum StreamUpdateHandling
+    {
+        ExpectedLifecycle,
+        Unknown
+    }
+
+    internal static StreamFailureDetails CreateStreamErrorDetails(
+        string? message,
+        string? code,
+        string? rawPayload)
+    {
+        return CreateFailureDetails(
+            message,
+            code,
+            rawPayload,
+            "The Responses API returned an error without a message.");
+    }
+
+    internal static StreamFailureDetails CreateResponseFailedDetails(
+        string? message,
+        string? code,
+        string? rawPayload)
+    {
+        return CreateFailureDetails(
+            message,
+            code,
+            rawPayload,
+            "The response failed without an error message.");
+    }
+
+    private static StreamFailureDetails CreateFailureDetails(
+        string? message,
+        string? code,
+        string? rawPayload,
+        string fallbackMessage)
+    {
+        var nestedMessage = TryExtractNestedErrorField(rawPayload, "message");
+        var nestedCode = TryExtractNestedErrorField(rawPayload, "code");
+        var resolvedCode = FirstNonEmpty(code, nestedCode);
+        var resolvedMessage = FirstNonEmpty(
+            message,
+            nestedMessage,
+            fallbackMessage);
+
+        return new StreamFailureDetails(
+            resolvedMessage,
+            resolvedCode.Length > 0 ? resolvedCode : null,
+            rawPayload);
+    }
+
+    internal static StreamUpdateHandling ClassifyUnhandledStreamUpdate(StreamingResponseUpdate update)
+    {
+        return update is
+            StreamingResponseInProgressUpdate or
+            StreamingResponseOutputTextDoneUpdate or
+            StreamingResponseContentPartAddedUpdate or
+            StreamingResponseContentPartDoneUpdate or
+            StreamingResponseMcpListToolsInProgressUpdate or
+            StreamingResponseMcpListToolsCompletedUpdate or
+            StreamingResponseMcpCallInProgressUpdate or
+            StreamingResponseMcpCallArgumentsDeltaUpdate or
+            StreamingResponseMcpCallArgumentsDoneUpdate or
+            StreamingResponseMcpCallCompletedUpdate
+                ? StreamUpdateHandling.ExpectedLifecycle
+                : StreamUpdateHandling.Unknown;
+    }
+
+    private static string? TryExtractRawPayload(
+        System.ClientModel.Primitives.JsonPatch patch,
+        ILogger logger)
+    {
+        try
+        {
+            return patch.ToBinaryData().ToString();
+        }
+        catch (Exception ex)
+        {
+            logger.LogDebug(ex, "Unable to extract raw streaming error payload with primary path");
+
+            try
+            {
+                return patch.GetJson("$"u8).ToString();
+            }
+            catch (Exception fallbackException)
+            {
+                logger.LogDebug(fallbackException, "Unable to extract raw streaming error payload");
+                return null;
+            }
+        }
+    }
+
+    private static string? TryExtractNestedErrorField(string? rawPayload, string fieldName)
+    {
+        if (string.IsNullOrWhiteSpace(rawPayload))
+        {
+            return null;
+        }
+
+        try
+        {
+            using var document = JsonDocument.Parse(rawPayload);
+            var root = document.RootElement;
+
+            // JsonPatch.ToBinaryData() serializes RFC 6902 operations (a JSON array), not the model object.
+            return root.ValueKind switch
+            {
+                JsonValueKind.Object => TryGetNestedErrorField(root, fieldName),
+                JsonValueKind.Array => TryGetNestedErrorFieldFromPatchOperations(root, fieldName),
+                _ => null
+            };
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
+    private static string? TryGetNestedErrorField(JsonElement payload, string fieldName)
+    {
+        return payload.ValueKind == JsonValueKind.Object
+            && payload.TryGetProperty("error", out var error)
+                ? TryGetStringProperty(error, fieldName)
+                : null;
+    }
+
+    private static string? TryGetNestedErrorFieldFromPatchOperations(JsonElement operations, string fieldName)
+    {
+        string? result = null;
+
+        foreach (var operation in operations.EnumerateArray())
+        {
+            var op = TryGetStringProperty(operation, "op");
+            var path = TryGetStringProperty(operation, "path");
+            JsonElement value = default;
+            if (path is null
+                || (path.Length > 0 && path[0] != '/')
+                || !(op == "remove"
+                    || ((op is "add" or "replace") && operation.TryGetProperty("value", out value))))
+            {
+                continue;
+            }
+
+            var segments = path.Length == 0
+                ? []
+                : path.Split('/').Skip(1).Select(UnescapeJsonPointerSegment).ToArray();
+
+            // Operations apply in order, so any later write or removal of the field overwrites earlier values.
+            result = segments switch
+            {
+                [] => TryGetNestedErrorField(value, fieldName),
+                ["error"] => TryGetStringProperty(value, fieldName),
+                ["error", var field] when field == fieldName
+                    => value.ValueKind == JsonValueKind.String ? value.GetString() : null,
+                _ => result
+            };
+        }
+
+        return result;
+    }
+
+    private static string? TryGetStringProperty(JsonElement element, string propertyName)
+    {
+        return element.ValueKind == JsonValueKind.Object
+            && element.TryGetProperty(propertyName, out var value)
+            && value.ValueKind == JsonValueKind.String
+                ? value.GetString()
+                : null;
+    }
+
+    private static string UnescapeJsonPointerSegment(string segment) =>
+        segment.Replace("~1", "/").Replace("~0", "~");
+
+    private static string FirstNonEmpty(params string?[] values)
+    {
+        foreach (var value in values)
+        {
+            if (!string.IsNullOrWhiteSpace(value))
+            {
+                return value;
+            }
+        }
+
+        return string.Empty;
     }
 
     /// <summary>

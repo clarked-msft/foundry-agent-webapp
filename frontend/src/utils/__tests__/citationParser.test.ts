@@ -21,6 +21,14 @@ describe('parseContentWithCitations', () => {
       const result = parseContentWithCitations(content, []);
       expect(result.processedText).toBe(content);
     });
+
+    it('handles null annotations from stored conversations', () => {
+      const content = 'A historical response without citations.';
+      const result = parseContentWithCitations(content, null);
+
+      expect(result.citations).toHaveLength(0);
+      expect(result.processedText).toBe(content);
+    });
   });
 
   describe('textToReplace substitution', () => {
