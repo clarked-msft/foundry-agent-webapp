@@ -42,6 +42,7 @@ public class AgentFrameworkService : IDisposable
     private readonly string? _backendClientId;
     private readonly string? _tenantId;
     private readonly string? _managedIdentityClientId;
+    private readonly bool _enableConversationUserFiltering;
     // Foundry auth scope precedence:
     // 1) AI_AUTH_SCOPE (canonical)
     // 2) AI_SCOPE (legacy fallback)
@@ -97,6 +98,7 @@ public class AgentFrameworkService : IDisposable
             _configuredAgentVersion ?? "<latest>");
 
         _backendClientId = configuration["ENTRA_BACKEND_CLIENT_ID"];
+        _enableConversationUserFiltering = ConversationUserFilter.IsEnabled(configuration);
         _tenantId = configuration["ENTRA_TENANT_ID"] ?? configuration["AzureAd:TenantId"];
         _aiScope = ResolveAiAuthScope(configuration);
         // User-assigned MI client ID — used for MI-only mode and as FIC assertion in OBO mode
@@ -346,6 +348,8 @@ public class AgentFrameworkService : IDisposable
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
+
+        await EnsureConversationAccessAsync(conversationId, cancellationToken);
 
         _logger.LogInformation(
             "Streaming message to conversation: {ConversationId}, ImageCount: {ImageCount}, FileCount: {FileCount}, HasApproval: {HasApproval}",
@@ -888,6 +892,12 @@ public class AgentFrameworkService : IDisposable
             
             ProjectConversationCreationOptions conversationOptions = new();
 
+            if (_enableConversationUserFiltering)
+            {
+                var userObjectId = ConversationUserFilter.RequireUserObjectId(_httpContextAccessor?.HttpContext?.User);
+                conversationOptions.Metadata[ConversationUserFilter.OwnerMetadataKey] = userObjectId;
+            }
+
             if (!string.IsNullOrEmpty(firstMessage))
             {
                 // Store title in metadata (truncate to 50 chars)
@@ -936,11 +946,26 @@ public class AgentFrameworkService : IDisposable
             // republished in Foundry (its "latest" version changes) even though they still exist.
             // Passing name-only scopes the list to the agent across all of its versions.
             var conversations = new List<ConversationSummary>();
+            var userObjectId = _enableConversationUserFiltering
+                ? ConversationUserFilter.GetUserObjectId(_httpContextAccessor?.HttpContext?.User)
+                : null;
+
+            if (_enableConversationUserFiltering && string.IsNullOrWhiteSpace(userObjectId))
+            {
+                _logger.LogWarning("Cannot list conversations because the authenticated user has no Entra object ID");
+                return conversations;
+            }
+
             // Fetch limit+1 to detect if more conversations exist beyond the requested page
             var fetchLimit = limit + 1;
             await foreach (var conv in GetProjectClient().ProjectOpenAIClient.GetProjectConversationsClient().GetProjectConversationsAsync(
                 new AgentReference(_agentId), cancellationToken: cancellationToken))
             {
+                if (!ConversationUserFilter.CanAccessConversation(conv.Metadata, userObjectId, _enableConversationUserFiltering))
+                {
+                    continue;
+                }
+
                 conversations.Add(new ConversationSummary
                 {
                     Id = conv.Id,
@@ -973,6 +998,8 @@ public class AgentFrameworkService : IDisposable
 
         try
         {
+            await EnsureConversationAccessAsync(conversationId, cancellationToken);
+
             _logger.LogInformation("Getting messages for conversation: {ConversationId}", conversationId);
 
             var messages = new List<ConversationMessageInfo>();
@@ -1019,6 +1046,27 @@ public class AgentFrameworkService : IDisposable
         {
             _logger.LogError(ex, "Failed to get messages for conversation: {ConversationId}", conversationId);
             throw;
+        }
+    }
+
+    internal async Task EnsureConversationAccessAsync(string conversationId, CancellationToken cancellationToken)
+    {
+        if (!_enableConversationUserFiltering)
+        {
+            return;
+        }
+
+        var userObjectId = ConversationUserFilter.GetUserObjectId(_httpContextAccessor?.HttpContext?.User);
+        if (string.IsNullOrWhiteSpace(userObjectId))
+        {
+            throw new ConversationAccessDeniedException();
+        }
+
+        var conversation = await GetProjectClient().ProjectOpenAIClient.GetProjectConversationsClient()
+            .GetProjectConversationAsync(conversationId, cancellationToken);
+        if (!ConversationUserFilter.IsOwnedByUser(conversation.Value.Metadata, userObjectId))
+        {
+            throw new ConversationAccessDeniedException();
         }
     }
 

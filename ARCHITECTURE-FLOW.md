@@ -162,7 +162,13 @@ sequenceDiagram
     Handler-->>Client: data: {type: done}
 ```
 
-### 1.5 Backend SSE Event Types
+### 1.5 Optional Prompt Agent Conversation Ownership
+
+When `ENABLE_CONVERSATION_USER_FILTERING=true`, new conversation metadata stores the authenticated user's Entra `oid` under `ownerObjectId`. The app filters conversation lists by that metadata and checks it before returning history or streaming to an existing conversation. Missing or invalid user IDs and conversations without matching metadata are denied. When disabled (the default), conversation behavior is unchanged. This is app-level filtering; Foundry does not enforce metadata as an access-control rule.
+
+Hosted Agent sessions are a separate state mechanism and are not covered by this Prompt Agent conversation setting.
+
+### 1.6 Backend SSE Event Types
 
 | Event Type | When Sent | Payload |
 |------------|-----------|---------|

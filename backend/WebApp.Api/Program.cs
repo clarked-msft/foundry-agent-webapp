@@ -253,6 +253,13 @@ app.MapPost("/api/chat/stream", async (
             errorResponse.Detail ?? errorResponse.Title, 
             cancellationToken);
     }
+    catch (ConversationAccessDeniedException ex)
+    {
+        await WriteErrorEvent(
+            httpContext.Response,
+            ex.Message,
+            cancellationToken);
+    }
     catch (Exception ex)
     {
         var logger = httpContext.RequestServices.GetRequiredService<ILogger<Program>>();
@@ -430,9 +437,8 @@ app.MapGet("/api/conversations", async (
     int? limit,
     CancellationToken cancellationToken) =>
 {
-    // MI mode: conversations are agent-scoped, not user-scoped.
-    // All authenticated users see all conversations for this agent.
-    // This is by-design — OBO mode (ENTRA_BACKEND_CLIENT_ID set) scopes per-user.
+    // By default, all authenticated users see conversations for this agent.
+    // Optional metadata ownership filtering can be enabled independently of the credential mode.
     try
     {
         var pageSize = Math.Clamp(limit ?? 20, 1, 100);
@@ -467,6 +473,10 @@ app.MapGet("/api/conversations/{conversationId}/messages", async (
     {
         var messages = await agentService.GetConversationMessagesAsync(conversationId, cancellationToken);
         return Results.Ok(messages);
+    }
+    catch (ConversationAccessDeniedException)
+    {
+        return Results.NotFound();
     }
     catch (Exception ex)
     {
