@@ -421,8 +421,16 @@ This creates a backend API app registration with FIC, sets `api://{backendClient
 |--------|--------|
 | **Wrong consent target** | Portal shows "Microsoft Cognitive Services" (`cognitiveservices.azure.com`, appId `7d312290-...`) — this is NOT correct. `AIProjectClient` uses `ai.azure.com/.default` → **Azure Machine Learning Services** (appId `18a66f5f-...`). Consenting to wrong one gives green checkmark but runtime `AADSTS65001`. |
 | **Tool identity is separate** | OBO only affects the Agent Service API caller. Agent tools (MCP, OpenAPI, Logic Apps) use the agent's identity from Foundry portal. Configure [Agent Identity](https://learn.microsoft.com/azure/ai-foundry/agents/concepts/agent-identity) separately for per-user tool access. |
-| **Conversations not user-scoped in MI mode** | MI uses a shared identity — all users see all conversations. OBO provides per-user isolation. |
+| **Conversation ownership filtering** | Disabled by default; optionally filter Prompt Agent conversations in the app using `ENABLE_CONVERSATION_USER_FILTERING=true` (details below). |
 | **Local dev uses CLI credentials** | OBO requires a managed identity for FIC. Locally, the app uses `az login` credentials regardless of `ENTRA_BACKEND_CLIENT_ID`. |
+
+### Prompt Agent conversation ownership filtering
+
+Set `ENABLE_CONVERSATION_USER_FILTERING=true` to associate new Prompt Agent conversations with the authenticated Entra user's tenant ID (`tid`) and object ID (`oid`) claims, stored as `ownerTenantId` and `ownerObjectId` metadata. Conversation lists and access checks require both values to match. The app checks ownership before returning conversation history and before streaming to an existing conversation. The setting is disabled by default, preserving the existing shared conversation behavior.
+
+When enabled, requests without a valid Entra `oid` fail closed: new conversations are not created, the list is empty, and attempts to access a conversation return no conversation data. Existing conversations without matching owner metadata, including conversations created before enabling this setting, are hidden and inaccessible through these app endpoints.
+
+This is app-level filtering, not Foundry-enforced access control. A user who has direct Foundry API access and permissions can still query other conversations outside this app. The feature covers Prompt Agent conversations; Hosted Agent sessions are a separate state mechanism and are not covered. See the [conversation API](https://ai.azure.com/api-reference/conversations/create-conversation/), [conversation retrieval API](https://ai.azure.com/api-reference/conversations/get-conversation/), [Hosted Agent sessions documentation](https://learn.microsoft.com/azure/foundry/agents/how-to/manage-hosted-sessions), and [Entra ID token claims reference](https://learn.microsoft.com/entra/identity-platform/id-token-claims-reference).
 
 ## Project Structure
 
