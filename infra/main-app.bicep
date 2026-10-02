@@ -9,6 +9,7 @@ param aiAuthScope string = 'https://ai.azure.com/.default'
 param entraSpaClientId string
 param entraTenantId string
 param entraBackendClientId string = ''
+param oboTokenExchangeAudience string = 'api://AzureADTokenExchange'
 param webImageName string
 param userAssignedIdentityId string = ''
 param oboManagedIdentityClientId string = ''
@@ -73,6 +74,10 @@ var oboEnv = !empty(entraBackendClientId) ? [
   {
     name: 'ENTRA_BACKEND_CLIENT_ID'
     value: entraBackendClientId
+  }
+  {
+    name: 'OBO_TOKEN_EXCHANGE_AUDIENCE'
+    value: oboTokenExchangeAudience
   }
 ] : []
 

@@ -653,6 +653,7 @@ The backend follows strict async/await conventions:
 | `ASPNETCORE_ENVIRONMENT` | Environment | Development/Production | `Development` |
 | `ENTRA_BACKEND_CLIENT_ID` | Container App env | Backend app ID for OBO | `59bc6af3-...` |
 | `MANAGED_IDENTITY_CLIENT_ID` | Container App env | User-assigned MI client ID for OBO (`OBO_MANAGED_IDENTITY_CLIENT_ID` is a deprecated alias) | `abc123-...` |
+| `OBO_TOKEN_EXCHANGE_AUDIENCE` | Container App env | Managed identity assertion audience; override for non-public clouds | `api://AzureADTokenExchange` |
 | `APPLICATIONINSIGHTS_CONNECTION_STRING` | Container App env | Azure Monitor OpenTelemetry export (backend traces/metrics) | `InstrumentationKey=...` |
 | `APPLICATIONINSIGHTS_FRONTEND_CONNECTION_STRING` | Docker build arg | Frontend browser telemetry (injected at build as `VITE_APPLICATIONINSIGHTS_CONNECTION_STRING`) | `InstrumentationKey=...` |
 

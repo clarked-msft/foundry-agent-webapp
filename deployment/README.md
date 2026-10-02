@@ -85,11 +85,11 @@ base image pulls). For environments without internet access, use the two-file sp
 
    ```bash
    docker build -f deployment/docker/vendor.Dockerfile --target frontend-deps \
-     -t foundry-agent-frontend-deps:latest .
+     -t foundry-agent-frontend-deps:${VERSION:-latest} .
    docker build -f deployment/docker/vendor.Dockerfile --target runtime-base \
-     -t foundry-agent-runtime-base:latest .
-   docker save foundry-agent-frontend-deps:latest | gzip > foundry-agent-frontend-deps-latest.tar.gz
-   docker save foundry-agent-runtime-base:latest | gzip > foundry-agent-runtime-base-latest.tar.gz
+     -t foundry-agent-runtime-base:${VERSION:-latest} .
+   docker save foundry-agent-frontend-deps:${VERSION:-latest} | gzip > foundry-agent-frontend-deps-${VERSION:-latest}.tar.gz
+   docker save foundry-agent-runtime-base:${VERSION:-latest} | gzip > foundry-agent-runtime-base-${VERSION:-latest}.tar.gz
    ```
 
    Transfer both images into the air-gapped environment (push to a registry mirror reachable
