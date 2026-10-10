@@ -2,6 +2,7 @@ import { useRef, useEffect, useState, useDeferredValue, useCallback } from "reac
 import { AssistantMessage } from "./chat/AssistantMessage";
 import { UserMessage } from "./chat/UserMessage";
 import { McpApprovalCard } from "./chat/McpApprovalCard";
+import { OAuthConsentCard } from "./chat/OAuthConsentCard";
 import { StarterMessages } from "./chat/StarterMessages";
 import { ChatInput } from "./chat/ChatInput";
 import { DropZone } from "./chat/DropZone";
@@ -24,6 +25,8 @@ interface ChatInterfaceProps {
   pendingMessages?: Array<{ text: string; files?: File[] }>;
   onSendMessage: (text: string, files?: File[]) => void;
   onMcpApproval?: (approvalRequestId: string, approved: boolean, previousResponseId: string, conversationId: string) => void;
+  onOAuthConsentContinue?: (consentRequestId: string, previousResponseId: string, continuationMessage: string, conversationId: string) => void;
+  onOAuthConsentDismiss?: (consentRequestId: string) => void;
   onClearError?: () => void;
   onRecoveredInputConsumed?: () => void;
   onDequeueMessage?: (index: number) => void;
@@ -48,7 +51,7 @@ interface ChatInterfaceProps {
 }
 
 export const ChatInterface: React.FC<ChatInterfaceProps> = (props) => {
-  const { messages, status, error, streamingMessageId, recoveredInput, recoveredAttachments, pendingMessages, onSendMessage, onMcpApproval, onClearError, onRecoveredInputConsumed, onDequeueMessage, onOpenSettings, onNewChat, onCancelStream, onToggleSidebar, onExportConversation, onRegenerate, onEditMessage, onCancelEdit, isEditing, onFeedback, onDownloadFile, hasMessages, disabled, agentName, agentDescription, agentLogo, starterPrompts, conversationId } = props;
+  const { messages, status, error, streamingMessageId, recoveredInput, recoveredAttachments, pendingMessages, onSendMessage, onMcpApproval, onOAuthConsentContinue, onOAuthConsentDismiss, onClearError, onRecoveredInputConsumed, onDequeueMessage, onOpenSettings, onNewChat, onCancelStream, onToggleSidebar, onExportConversation, onRegenerate, onEditMessage, onCancelEdit, isEditing, onFeedback, onDownloadFile, hasMessages, disabled, agentName, agentDescription, agentLogo, starterPrompts, conversationId } = props;
   const deferredMessages = useDeferredValue(messages);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [liveRegionMessage, setLiveRegionMessage] = useState<string>('');
@@ -236,6 +239,23 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = (props) => {
                       message.mcpApproval!.previousResponseId || '',
                       conversationId || ''
                     )}
+                    disabled={isBusy}
+                    agentName={agentName}
+                    agentLogo={agentLogo}
+                  />
+                ) : message.role === "oauth-consent" ? (
+                  <OAuthConsentCard
+                    key={message.id}
+                    consentLink={message.oauthConsent?.consentLink || ''}
+                    serverLabel={message.oauthConsent?.serverLabel || 'MCP connection'}
+                    resolved={message.oauthConsent?.resolved}
+                    onContinue={() => onOAuthConsentContinue?.(
+                      message.oauthConsent!.id,
+                      message.oauthConsent!.previousResponseId,
+                      message.oauthConsent!.continuationMessage,
+                      conversationId || ''
+                    )}
+                    onDismiss={() => onOAuthConsentDismiss?.(message.oauthConsent!.id)}
                     disabled={isBusy}
                     agentName={agentName}
                     agentLogo={agentLogo}

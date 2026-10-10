@@ -525,6 +525,64 @@ describe('appReducer', () => {
     });
   });
 
+  describe('CHAT_OAUTH_CONSENT_REQUEST', () => {
+    const consentRequest = {
+      id: 'oauthreq-123',
+      consentLink: 'https://example.com/consent',
+      serverLabel: 'Orders',
+      previousResponseId: 'resp-123',
+      continuationMessage: 'Check my orders',
+    };
+
+    it('adds an OAuth consent message and disables input', () => {
+      const state = createInitialState();
+      state.chat.status = 'streaming';
+
+      const result = appReducer(state, {
+        type: 'CHAT_OAUTH_CONSENT_REQUEST',
+        messageId: 'msg-1',
+        consentRequest,
+      });
+
+      expect(result.chat.status).toBe('idle');
+      expect(result.chat.messages[0].role).toBe('oauth-consent');
+      expect(result.chat.messages[0].oauthConsent).toEqual(consentRequest);
+      expect(result.ui.chatInputEnabled).toBe(false);
+    });
+
+    it('keeps input disabled when the incomplete stream reports usage', () => {
+      const state = appReducer(createInitialState(), {
+        type: 'CHAT_OAUTH_CONSENT_REQUEST',
+        messageId: 'msg-1',
+        consentRequest,
+      });
+
+      const result = appReducer(state, {
+        type: 'CHAT_STREAM_COMPLETE',
+        usage: { promptTokens: 10, completionTokens: 0, totalTokens: 10 },
+      });
+
+      expect(result.ui.chatInputEnabled).toBe(false);
+    });
+
+    it('marks dismissed consent and re-enables input', () => {
+      const state = appReducer(createInitialState(), {
+        type: 'CHAT_OAUTH_CONSENT_REQUEST',
+        messageId: 'msg-1',
+        consentRequest,
+      });
+
+      const result = appReducer(state, {
+        type: 'CHAT_OAUTH_CONSENT_RESOLVED',
+        consentRequestId: consentRequest.id,
+        resolved: 'dismissed',
+      });
+
+      expect(result.chat.messages[0].oauthConsent?.resolved).toBe('dismissed');
+      expect(result.ui.chatInputEnabled).toBe(true);
+    });
+  });
+
   describe('CHAT_STREAM_COMPLETE', () => {
     it('sets status to idle', () => {
       const state = createInitialState();

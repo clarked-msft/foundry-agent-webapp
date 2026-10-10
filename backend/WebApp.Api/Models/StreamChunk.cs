@@ -2,7 +2,8 @@ namespace WebApp.Api.Models;
 
 /// <summary>
 /// Represents a chunk of streaming response data.
-/// Can contain text content, annotations (citations), or MCP tool approval requests.
+/// Can contain text content, annotations (citations), MCP tool approval requests,
+/// or OAuth consent requests.
 /// </summary>
 public record StreamChunk
 {
@@ -20,6 +21,11 @@ public record StreamChunk
     /// MCP tool approval request. Null if this chunk contains text or annotations.
     /// </summary>
     public McpApprovalRequest? McpApprovalRequest { get; init; }
+
+    /// <summary>
+    /// OAuth consent request for an MCP connection. Null for other chunk types.
+    /// </summary>
+    public OAuthConsentRequest? OAuthConsentRequest { get; init; }
     
     /// <summary>
     /// Whether this chunk signals a tool-use step (e.g. file_search, code_interpreter).
@@ -45,6 +51,11 @@ public record StreamChunk
     /// Creates an MCP approval request chunk.
     /// </summary>
     public static StreamChunk McpApproval(McpApprovalRequest request) => new() { McpApprovalRequest = request };
+
+    /// <summary>
+    /// Creates an OAuth consent request chunk.
+    /// </summary>
+    public static StreamChunk OAuthConsent(OAuthConsentRequest request) => new() { OAuthConsentRequest = request };
     
     /// <summary>
     /// Creates a tool-use indicator chunk.
@@ -65,6 +76,11 @@ public record StreamChunk
     /// Whether this chunk contains an MCP approval request.
     /// </summary>
     public bool IsMcpApprovalRequest => McpApprovalRequest != null;
+
+    /// <summary>
+    /// Whether this chunk contains an OAuth consent request.
+    /// </summary>
+    public bool IsOAuthConsentRequest => OAuthConsentRequest != null;
 }
 
 /// <summary>
@@ -77,4 +93,16 @@ public record McpApprovalRequest
     public required string ServerLabel { get; init; }
     public string? Arguments { get; init; }
     public string? PreviousResponseId { get; init; }
+}
+
+/// <summary>
+/// Represents an MCP connection that requires the user to complete OAuth authorization.
+/// </summary>
+public record OAuthConsentRequest
+{
+    public required string Id { get; init; }
+    public required string ConsentLink { get; init; }
+    public required string ServerLabel { get; init; }
+    public required string PreviousResponseId { get; init; }
+    public required string ContinuationMessage { get; init; }
 }

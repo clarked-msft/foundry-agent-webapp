@@ -240,4 +240,25 @@ public class AgentFrameworkServiceStreamFailureTests
         Assert.IsNull(details.Code);
         Assert.AreEqual(rawPayload, details.RawPayload);
     }
+
+    [TestMethod]
+    [DataRow("https://login.microsoftonline.com/common/oauth2/v2.0/authorize")]
+    [DataRow("https://example.com/consent?state=abc")]
+    public void IsSafeOAuthConsentLink_WhenLinkIsSafe_ReturnsTrue(string consentLink)
+    {
+        Assert.IsTrue(AgentFrameworkService.IsSafeOAuthConsentLink(consentLink));
+    }
+
+    [TestMethod]
+    [DataRow(null)]
+    [DataRow("")]
+    [DataRow("http://example.com/consent")]
+    [DataRow("https://user:password@example.com/consent")]
+    [DataRow("javascript:alert(1)")]
+    [DataRow("not-a-url")]
+    [DataRow("https://example.com/\nconsent")]
+    public void IsSafeOAuthConsentLink_WhenLinkIsUnsafe_ReturnsFalse(string? consentLink)
+    {
+        Assert.IsFalse(AgentFrameworkService.IsSafeOAuthConsentLink(consentLink));
+    }
 }

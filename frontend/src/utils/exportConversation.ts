@@ -12,6 +12,8 @@ export function exportAsMarkdown(messages: IChatItem[], agentName?: string): str
       lines.push(`## ${agentName || 'Assistant'}\n${msg.content}\n`);
     } else if (msg.role === 'approval') {
       lines.push(`## Tool Approval\n_MCP tool approval: ${msg.mcpApproval?.toolName || 'unknown'}_\n`);
+    } else if (msg.role === 'oauth-consent') {
+      lines.push(`## Authorization Required\n_OAuth authorization requested for ${msg.oauthConsent?.serverLabel || 'an MCP connection'}._\n`);
     }
   }
   return lines.join('\n');
